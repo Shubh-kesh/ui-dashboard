@@ -57,6 +57,11 @@ python local_dev_seed.py   # 7 days -> LIVE_PHOTO_LOGS, days 7..30 -> ARCHIVE
 The seeder writes to `MSSQL_DATABASE` (default `docai`). Override with env
 variables, e.g. `SEED_LIVE_DAYS`, `SEED_ARCHIVE_DAYS`, `SEED_ROWS_PER_DAY`.
 
+Seed data mirrors UAT: the `LIVEPHOTO_UCJv5` source, `<uuid>_<hex8>~<attempt>`
+transaction ids, `NOT_FOUND` tracking ids, and the real status vocabulary
+(`PASSED` / `FAILED` / `FB01-03` / `NOT REQUIRED`, with `VERIFYTOKEN_STATUS` and
+`CALLBACK_STATUS` left NULL when a stage was skipped).
+
 ### 3. Backend
 
 ```bash

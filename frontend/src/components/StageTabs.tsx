@@ -22,6 +22,7 @@ const STATUS_COLORS: Record<string, string> = {
   REJECTED: '#dc2626',
   'REVIEW PENDING': '#f59e0b',
   PENDING: '#f59e0b',
+  'NOT REQUIRED': '#94a3b8',
   NULL: '#94a3b8',
 };
 
