@@ -1,0 +1,17 @@
+# Build context for the backend image (docker build ... backend/)
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+tests/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store

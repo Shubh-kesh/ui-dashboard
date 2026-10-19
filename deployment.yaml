@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ui-dashboard-config
+  namespace: default  # TODO: set to your namespace (e.g. livephoto)
+data:
+  # Direct MSSQL connection (no uidb proxy).
+  MSSQL_SERVER: "localhost,1433"       # TODO: real SQL host:port
+  MSSQL_DATABASE: "docai"              # TODO: real database
+  MSSQL_USERNAME: "sa"                 # TODO: use a scoped login
+  ODBC_DRIVER: "ODBC Driver 18 for SQL Server"
+  LIVE_PHOTO_TABLE: "LIVE_PHOTO_LOGS"
+  DEFAULT_ROW_LIMIT: "5000"
+  MAX_ROW_LIMIT: "50000"
+---
+# MSSQL password is a secret, not in the ConfigMap.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ui-dashboard-secrets
+  namespace: default  # TODO: match ConfigMap namespace
+type: Opaque
+stringData:
+  MSSQL_PASSWORD: "REPLACE_ME"  # TODO: real password (or wire to an existing secret)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui-dashboard-backend
+  namespace: default
+  labels:
+    app: ui-dashboard-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ui-dashboard-backend
+  template:
+    metadata:
+      labels:
+        app: ui-dashboard-backend
+    spec:
+      containers:
+        - name: backend
+          image: <REGION>-docker.pkg.dev/<PROJECT_ID>/<REPO>/ui-dashboard-backend:0.1.0  # TODO
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: ui-dashboard-config
+            - secretRef:
+                name: ui-dashboard-secrets
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui-dashboard-backend
+  namespace: default
+spec:
+  selector:
+    app: ui-dashboard-backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui-dashboard-frontend
+  namespace: default
+  labels:
+    app: ui-dashboard-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ui-dashboard-frontend
+  template:
+    metadata:
+      labels:
+        app: ui-dashboard-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: <REGION>-docker.pkg.dev/<PROJECT_ID>/<REPO>/ui-dashboard-frontend:0.1.0  # TODO
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui-dashboard-frontend
+  namespace: default
+spec:
+  selector:
+    app: ui-dashboard-frontend
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+# Optional: expose the UI without an Ingress (internal LB).
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: ui-dashboard-frontend-lb
+#   namespace: default
+# spec:
+#   selector:
+#     app: ui-dashboard-frontend
+#   ports:
+#     - port: 80
+#       targetPort: 8080
+#   type: LoadBalancer
+#   annotations:
+#     networking.gke.io/load-balancer-type: "Internal"

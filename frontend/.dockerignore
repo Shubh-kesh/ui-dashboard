@@ -1,0 +1,14 @@
+# Build context for the frontend image (docker build ... frontend/)
+node_modules/
+dist/
+build/
+.vite/
+.env
+.env.*
+!.env.example
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage/
+.eslintcache
+.DS_Store

@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ui-dashboard-config
+  namespace: default  # TODO: set to your actual namespace (e.g. livephoto)
+data:
+  UIDB_ENDPOINT: "http://uidb-service.default.svc.cluster.local/query"  # TODO: real uidb service DNS
+  DB_SERVER: "DOCAI"
+  TABLE_NAME: "<CATALOG_TABLE_NAME>"  # TODO: actual table/view name
+  UIDB_TIMEOUT_SECS: "15"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui-dashboard
+  namespace: default  # TODO: match ConfigMap namespace
+  labels:
+    app: ui-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ui-dashboard
+  template:
+    metadata:
+      labels:
+        app: ui-dashboard
+    spec:
+      containers:
+        - name: ui-dashboard
+          image: <REGION>-docker.pkg.dev/<PROJECT_ID>/<REPO>/ui-dashboard:latest  # TODO: your Artifact Registry image
+          ports:
+            - containerPort: 8501
+          envFrom:
+            - configMapRef:
+                name: ui-dashboard-config
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 20
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui-dashboard-service
+  namespace: default  # TODO: match Deployment namespace
+spec:
+  selector:
+    app: ui-dashboard
+  ports:
+    - port: 80
+      targetPort: 8501
+  type: ClusterIP
+  # For direct browser access without an Ingress, switch to:
+  #   type: LoadBalancer
+  #   annotations:
+  #     networking.gke.io/load-balancer-type: "Internal"   # keeps it off the public internet
