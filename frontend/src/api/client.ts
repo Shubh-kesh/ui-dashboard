@@ -5,6 +5,7 @@ import type {
   FraudEventualResponse,
   FraudSummaryResponse,
   RawResponse,
+  TableKey,
 } from './types';
 
 const API_BASE = import.meta.env?.VITE_API_BASE ?? '';
@@ -40,24 +41,41 @@ async function getJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+const windowParams = (q: DashboardQuery) => ({
+  start: q.start,
+  end: q.end,
+  source: q.source,
+  table: q.table,
+});
+
 export const api = {
   getDashboard: (q: DashboardQuery) =>
-    getJson<DashboardResponse>(`/api/dashboard${qs({ ...q })}`),
+    getJson<DashboardResponse>(
+      `/api/dashboard${qs({
+        ...windowParams(q),
+        granularity: q.granularity,
+        start_time: q.start_time,
+        end_time: q.end_time,
+      })}`,
+    ),
 
-  getSources: () => getJson<{ sources: string[] }>('/api/sources').then((r) => r.sources),
+  getSources: (table: TableKey) =>
+    getJson<{ sources: string[] }>(`/api/sources${qs({ table })}`).then((r) => r.sources),
 
-  getRaw: (q: DashboardQuery) => getJson<RawResponse>(`/api/raw${qs({ ...q })}`),
+  getRaw: (q: DashboardQuery) => getJson<RawResponse>(`/api/raw${qs(windowParams(q))}`),
 
-  rawCsvUrl: (q: DashboardQuery) => `${API_BASE}/api/raw.csv${qs({ ...q })}`,
+  rawCsvUrl: (q: DashboardQuery) => `${API_BASE}/api/raw.csv${qs(windowParams(q))}`,
 
-  getFraudSummary: (source: string, threshold: number) =>
-    getJson<FraudSummaryResponse>(`/api/fraud/summary${qs({ source, threshold })}`),
+  getFraudSummary: (source: string, threshold: number, table: TableKey) =>
+    getJson<FraudSummaryResponse>(`/api/fraud/summary${qs({ source, threshold, table })}`),
 
-  getFraudEventual: (source: string, minFailed: number) =>
-    getJson<FraudEventualResponse>(`/api/fraud/eventual${qs({ source, min_failed: minFailed })}`),
+  getFraudEventual: (source: string, minFailed: number, table: TableKey) =>
+    getJson<FraudEventualResponse>(
+      `/api/fraud/eventual${qs({ source, min_failed: minFailed, table })}`,
+    ),
 
-  getFraudBurst: (source: string, gapSeconds: number, minPairs: number) =>
+  getFraudBurst: (source: string, gapSeconds: number, minPairs: number, table: TableKey) =>
     getJson<FraudBurstResponse>(
-      `/api/fraud/burst${qs({ source, gap_seconds: gapSeconds, min_pairs: minPairs })}`,
+      `/api/fraud/burst${qs({ source, gap_seconds: gapSeconds, min_pairs: minPairs, table })}`,
     ),
 };

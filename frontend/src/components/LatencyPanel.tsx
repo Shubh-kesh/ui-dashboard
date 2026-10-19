@@ -1,15 +1,12 @@
-import type { LatencyRawPoint, LatencyStat } from '../api/types';
+import type { LatencyStat } from '../api/types';
 import Plot from './Plot';
 import { fmtNumber, fmtSeconds } from '../lib/format';
 
 interface Props {
   stats: LatencyStat[];
-  raw: LatencyRawPoint[];
 }
 
-const STAGES = ['Blink', 'Head Nod', 'Authenticity', 'Image Seg', 'Verify Token', 'Callback'];
-
-export default function LatencyPanel({ stats, raw }: Props) {
+export default function LatencyPanel({ stats }: Props) {
   if (stats.length === 0) {
     return (
       <section>
@@ -19,12 +16,28 @@ export default function LatencyPanel({ stats, raw }: Props) {
     );
   }
 
-  const boxTraces = STAGES.filter((s) => raw.some((r) => r.stage === s)).map((stage) => ({
+  // Box plot built from server-side summary stats (no raw points shipped).
+  const boxTraces = stats.map((s) => ({
     type: 'box',
-    name: stage,
-    y: raw.filter((r) => r.stage === stage).map((r) => r.duration),
+    name: s.stage,
+    q1: [s.q1],
+    median: [s.p50],
+    q3: [s.q3],
+    lowerfence: [s.min],
+    upperfence: [s.max],
+    mean: [s.mean],
     boxpoints: false,
   }));
+
+  const columns: { key: keyof LatencyStat; label: string }[] = [
+    { key: 'min', label: 'Min (s)' },
+    { key: 'q1', label: 'Q1 (s)' },
+    { key: 'p50', label: 'Median (s)' },
+    { key: 'q3', label: 'Q3 (s)' },
+    { key: 'max', label: 'Max (s)' },
+    { key: 'mean', label: 'Mean (s)' },
+    { key: 'p95', label: 'P95 (s)' },
+  ];
 
   return (
     <section>
@@ -34,9 +47,11 @@ export default function LatencyPanel({ stats, raw }: Props) {
           <thead className="bg-slate-100 text-left text-slate-600">
             <tr>
               <th className="px-4 py-2 font-medium">Stage</th>
-              <th className="px-4 py-2 font-medium">Mean (s)</th>
-              <th className="px-4 py-2 font-medium">P50 (s)</th>
-              <th className="px-4 py-2 font-medium">P95 (s)</th>
+              {columns.map((c) => (
+                <th key={c.key} className="px-4 py-2 font-medium">
+                  {c.label}
+                </th>
+              ))}
               <th className="px-4 py-2 font-medium">N</th>
             </tr>
           </thead>
@@ -44,28 +59,28 @@ export default function LatencyPanel({ stats, raw }: Props) {
             {stats.map((s) => (
               <tr key={s.stage} className="border-t border-slate-100">
                 <td className="px-4 py-2 font-medium text-slate-700">{s.stage}</td>
-                <td className="px-4 py-2">{fmtSeconds(s.mean)}</td>
-                <td className="px-4 py-2">{fmtSeconds(s.p50)}</td>
-                <td className="px-4 py-2">{fmtSeconds(s.p95)}</td>
+                {columns.map((c) => (
+                  <td key={c.key} className="px-4 py-2">
+                    {fmtSeconds(s[c.key] as number)}
+                  </td>
+                ))}
                 <td className="px-4 py-2">{fmtNumber(s.n)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      {boxTraces.length > 0 && (
-        <Plot
-          testId="latency-box"
-          data={boxTraces as never}
-          layout={{
-            title: 'Response Latency by Stage',
-            yaxis: { title: 'Duration (sec)' },
-            showlegend: false,
-            margin: { t: 48, r: 16, b: 48, l: 56 },
-            height: 340,
-          }}
-        />
-      )}
+      <Plot
+        testId="latency-box"
+        data={boxTraces as never}
+        layout={{
+          title: 'Response Latency by Stage',
+          yaxis: { title: 'Duration (sec)' },
+          showlegend: false,
+          margin: { t: 48, r: 16, b: 48, l: 56 },
+          height: 340,
+        }}
+      />
     </section>
   );
 }

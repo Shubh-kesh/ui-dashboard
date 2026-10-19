@@ -14,11 +14,19 @@ afterEach(() => {
 });
 
 describe('api client', () => {
-  it('builds the dashboard query string and unwraps JSON', async () => {
+  it('builds the dashboard query string with window, table and granularity', async () => {
     const fetchMock = mockFetch({ rows: 1, kpis: {} });
     vi.stubGlobal('fetch', fetchMock);
 
-    const res = await api.getDashboard({ start: '2026-10-01', end: '2026-10-02', source: 'A' });
+    const res = await api.getDashboard({
+      start: '2026-10-01',
+      end: '2026-10-02',
+      source: 'A',
+      table: 'archive',
+      granularity: '30m',
+      start_time: '09:00',
+      end_time: '18:00',
+    });
 
     expect(res).toEqual({ rows: 1, kpis: {} });
     const url = fetchMock.mock.calls[0][0] as string;
@@ -26,20 +34,34 @@ describe('api client', () => {
     expect(url).toContain('start=2026-10-01');
     expect(url).toContain('end=2026-10-02');
     expect(url).toContain('source=A');
+    expect(url).toContain('table=archive');
+    expect(url).toContain('granularity=30m');
+    expect(url).toContain('start_time=09%3A00');
   });
 
   it('omits the optional source when empty', async () => {
     const fetchMock = mockFetch({ rows: 0 });
     vi.stubGlobal('fetch', fetchMock);
 
-    await api.getDashboard({ start: '2026-10-01', end: '2026-10-02' });
+    await api.getDashboard({ start: '2026-10-01', end: '2026-10-02', table: 'live' });
 
     expect(fetchMock.mock.calls[0][0] as string).not.toContain('source=');
   });
 
-  it('unwraps the sources array', async () => {
-    vi.stubGlobal('fetch', mockFetch({ sources: ['A', 'B'] }));
-    await expect(api.getSources()).resolves.toEqual(['A', 'B']);
+  it('scopes sources to the selected table', async () => {
+    const fetchMock = mockFetch({ sources: ['A', 'B'] });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(api.getSources('archive')).resolves.toEqual(['A', 'B']);
+    expect(fetchMock.mock.calls[0][0] as string).toContain('table=archive');
+  });
+
+  it('passes the table through to fraud calls', async () => {
+    const fetchMock = mockFetch({ source: 'A', total_users: 0, quick_success_users: 0, quick_success_pct: 0 });
+    vi.stubGlobal('fetch', fetchMock);
+    await api.getFraudSummary('A', 5, 'archive');
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain('/api/fraud/summary?');
+    expect(url).toContain('table=archive');
   });
 
   it('throws ApiError with the server detail on failure', async () => {

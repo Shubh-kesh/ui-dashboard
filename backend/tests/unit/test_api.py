@@ -39,6 +39,7 @@ def test_health_ok(client, fake_db):
     body = client.get("/api/health").json()
     assert body["status"] == "ok" and body["database_reachable"] is True
     assert body["table"] == "LIVE_PHOTO_LOGS"
+    assert body["archive_table"] == "LIVE_PHOTO_LOGS_ARCHIVE"
 
 
 def test_health_degraded_when_db_down(client, monkeypatch, catalog_df):
@@ -57,11 +58,33 @@ def test_dashboard_payload(client, fake_db):
     body = client.get("/api/dashboard", params=DATE).json()
     assert body["rows"] == 6
     assert body["kpis"]["total_txns"] == 6
-    assert len(body["funnel"]) == 6
-    assert set(body["stage_breakdown"]) == {"Blink", "Head Nod", "Authenticity",
-                                            "Image Seg", "Verify Token", "Callback"}
-    assert body["latency"]["stats"]
+    assert body["table"] == "LIVE_PHOTO_LOGS"
+    assert "funnel" not in body
+    assert body["time_series"]  # bucketed volume
+    assert set(body["stage_breakdown"]) == {
+        "Blink", "Head Nod", "Authenticity", "Image Seg", "Verify Token", "Callback",
+        "Fraud Attempt", "User Review",
+    }
+    assert body["latency"]["stats"] and "raw" not in body["latency"]
     assert body["source"] is None
+
+
+def test_dashboard_archive_table(client, fake_db):
+    body = client.get("/api/dashboard", params={**DATE, "table": "archive"}).json()
+    assert body["table"] == "LIVE_PHOTO_LOGS_ARCHIVE"
+
+
+def test_dashboard_accepts_time_range_and_granularity(client, fake_db):
+    body = client.get("/api/dashboard", params={
+        **DATE, "granularity": "15m", "start_time": "09:00", "end_time": "18:00",
+    }).json()
+    assert body["granularity"] == "15m"
+    assert body["start_time"] == "09:00"
+
+
+def test_dashboard_rejects_bad_granularity(client, fake_db):
+    resp = client.get("/api/dashboard", params={**DATE, "granularity": "7m"})
+    assert resp.status_code == 400
 
 
 def test_dashboard_rejects_bad_range(client, fake_db):
@@ -73,10 +96,12 @@ def test_raw_and_raw_csv(client, fake_db):
     raw = client.get("/api/raw", params=DATE).json()
     assert raw["count"] == 6
     assert "TXN_ID" in raw["columns"]
+    assert "FRAUD_ATTEMPT" in raw["columns"] and "USER_REVIEW" in raw["columns"]
     csv_resp = client.get("/api/raw.csv", params=DATE)
     assert csv_resp.status_code == 200
     assert csv_resp.headers["content-type"].startswith("text/csv")
-    assert "TXN_ID" in csv_resp.text.splitlines()[0]
+    header = csv_resp.text.splitlines()[0]
+    assert "TXN_ID" in header and "FRAUD_ATTEMPT" in header
 
 
 def test_fraud_endpoints(client, fake_db):
@@ -91,7 +116,8 @@ def test_fraud_endpoints(client, fake_db):
     assert len(eventual["rows"]) == 1 and eventual["rows"][0]["SUCCESS_TXN_ID"] == "b2~5"
 
     burst = client.get("/api/fraud/burst",
-                       params={"source": "MOBILE_APP", "gap_seconds": 5, "min_pairs": 3}).json()
+                       params={"source": "MOBILE_APP", "gap_seconds": 5, "min_pairs": 3,
+                               "table": "archive"}).json()
     assert burst["total_users"] == 10 and burst["burst_cases"] == 1 and burst["burst_pct"] == 10.0
 
 

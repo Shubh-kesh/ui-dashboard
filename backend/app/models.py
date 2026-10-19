@@ -12,6 +12,7 @@ class HealthResponse(BaseModel):
     status: str
     database_reachable: bool
     table: str
+    archive_table: str
 
 
 class SourcesResponse(BaseModel):
@@ -24,14 +25,10 @@ class KPIs(_Base):
     avg_callback_latency: float | None = None
 
 
-class DailyVolumePoint(_Base):
-    date: str | None
+class TimeSeriesPoint(_Base):
+    bucket: str
     count: int
-
-
-class FunnelPoint(_Base):
-    stage: str
-    count: int
+    delta_pct: float | None = None
 
 
 class StageStatusPoint(_Base):
@@ -45,17 +42,15 @@ class LatencyStat(_Base):
     mean: float
     p50: float
     p95: float
+    min: float
+    q1: float
+    q3: float
+    max: float
     n: int
-
-
-class LatencyRawPoint(_Base):
-    stage: str
-    duration: float
 
 
 class LatencyBlock(BaseModel):
     stats: list[LatencyStat]
-    raw: list[LatencyRawPoint]
 
 
 class DashboardResponse(_Base):
@@ -63,9 +58,12 @@ class DashboardResponse(_Base):
     start: str
     end: str
     source: str | None = None
+    table: str
+    granularity: str
+    start_time: str | None = None
+    end_time: str | None = None
     kpis: KPIs
-    daily_volume: list[DailyVolumePoint]
-    funnel: list[FunnelPoint]
+    time_series: list[TimeSeriesPoint]
     stage_breakdown: dict[str, list[StageStatusPoint]]
     latency: LatencyBlock
     exceptions: list[dict]

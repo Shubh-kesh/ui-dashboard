@@ -24,14 +24,16 @@ from ..services import metrics
 
 router = APIRouter(prefix="/api")
 
-
-def _clamp_limit(limit: int) -> int:
-    settings = get_settings()
-    return max(1, min(int(limit), settings.max_row_limit))
+_HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"
 
 
-def _load_df(start: dt.date, end: dt.date, source: str | None, limit: int):
-    sql, params = queries.catalog_query(_clamp_limit(limit), source)
+def _table_name(key: str) -> str:
+    """Resolve the table selector ('live'|'archive') to a table name."""
+    return get_settings().table_for(key)
+
+
+def _load_df(table_key: str, start: dt.date, end: dt.date, source: str | None):
+    sql, params = queries.catalog_query(_table_name(table_key), source)
     return db.fetch_df(sql, [start.isoformat(), end.isoformat(), *params])
 
 
@@ -43,16 +45,18 @@ def _check_range(start: dt.date, end: dt.date) -> None:
 @router.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     settings = get_settings()
+    reachable = db.ping()
     return HealthResponse(
-        status="ok" if db.ping() else "degraded",
-        database_reachable=db.ping(),
+        status="ok" if reachable else "degraded",
+        database_reachable=reachable,
         table=settings.table,
+        archive_table=settings.archive_table,
     )
 
 
 @router.get("/sources", response_model=SourcesResponse)
-def sources() -> SourcesResponse:
-    df = db.fetch_df(queries.sources_query())
+def sources(table: str = Query("live")) -> SourcesResponse:
+    df = db.fetch_df(queries.sources_query(_table_name(table)))
     values = [str(v) for v in df["SOURCE"].dropna().tolist()] if "SOURCE" in df.columns else []
     return SourcesResponse(sources=sorted(set(values)))
 
@@ -62,17 +66,29 @@ def dashboard(
     start: dt.date = Query(...),
     end: dt.date = Query(...),
     source: str | None = Query(None),
-    limit: int = Query(0),
+    table: str = Query("live"),
+    granularity: str = Query("auto"),
+    start_time: str | None = Query(None, pattern=_HHMM),
+    end_time: str | None = Query(None, pattern=_HHMM),
 ) -> DashboardResponse:
     _check_range(start, end)
-    limit = limit or get_settings().default_row_limit
-    df = _load_df(start, end, source, limit)
-    payload = metrics.build_dashboard(df)
+    if granularity != "auto" and granularity not in metrics.GRANULARITIES:
+        raise ValueError(f"unknown granularity {granularity!r}; expected auto or one of "
+                         f"{sorted(metrics.GRANULARITIES)}")
+    df = _load_df(table, start, end, source)
+    payload = metrics.build_dashboard(
+        df, start=start, end=end, granularity=granularity,
+        start_time=start_time, end_time=end_time,
+    )
     return DashboardResponse(
         rows=int(len(df)),
         start=start.isoformat(),
         end=end.isoformat(),
         source=source,
+        table=_table_name(table),
+        granularity=granularity,
+        start_time=start_time,
+        end_time=end_time,
         **payload,
     )
 
@@ -82,11 +98,10 @@ def raw(
     start: dt.date = Query(...),
     end: dt.date = Query(...),
     source: str | None = Query(None),
-    limit: int = Query(0),
+    table: str = Query("live"),
 ) -> RawResponse:
     _check_range(start, end)
-    limit = limit or get_settings().default_row_limit
-    df = _load_df(start, end, source, limit)
+    df = _load_df(table, start, end, source)
     df = metrics.add_date_column(df) if not df.empty else df
     rows = [{k: metrics._clean(v) for k, v in rec.items()}
             for rec in df.to_dict(orient="records")] if not df.empty else []
@@ -98,14 +113,13 @@ def raw_csv(
     start: dt.date = Query(...),
     end: dt.date = Query(...),
     source: str | None = Query(None),
-    limit: int = Query(0),
+    table: str = Query("live"),
 ) -> Response:
     _check_range(start, end)
-    limit = limit or get_settings().default_row_limit
-    df = _load_df(start, end, source, limit)
+    df = _load_df(table, start, end, source)
     buf = io.StringIO()
-    df.to_csv(buf, index=False)
-    filename = f"catalog_{start.isoformat()}_{end.isoformat()}.csv"
+    df.to_csv(buf, index=False, quoting=csv.QUOTE_MINIMAL)
+    filename = f"catalog_{table}_{start.isoformat()}_{end.isoformat()}.csv"
     return Response(
         content=buf.getvalue(),
         media_type="text/csv",
@@ -114,8 +128,12 @@ def raw_csv(
 
 
 @router.get("/fraud/summary", response_model=FraudSummaryResponse)
-def fraud_summary(source: str = Query(...), threshold: int = Query(3, ge=1)) -> FraudSummaryResponse:
-    sql, params = queries.fraud_summary_query(source, threshold)
+def fraud_summary(
+    source: str = Query(...),
+    threshold: int = Query(3, ge=1),
+    table: str = Query("live"),
+) -> FraudSummaryResponse:
+    sql, params = queries.fraud_summary_query(_table_name(table), source, threshold)
     df = db.fetch_df(sql, params)
     if df.empty or int(df.iloc[0]["TOTAL_USERS"] or 0) == 0:
         return FraudSummaryResponse(source=source, total_users=0, quick_success_users=0,
@@ -129,8 +147,8 @@ def fraud_summary(source: str = Query(...), threshold: int = Query(3, ge=1)) -> 
 
 
 @router.get("/fraud/total-users", response_model=FraudTotalUsersResponse)
-def fraud_total_users(source: str = Query(...)) -> FraudTotalUsersResponse:
-    sql, params = queries.fraud_total_users_query(source)
+def fraud_total_users(source: str = Query(...), table: str = Query("live")) -> FraudTotalUsersResponse:
+    sql, params = queries.fraud_total_users_query(_table_name(table), source)
     df = db.fetch_df(sql, params)
     total = 0
     if not df.empty and df.iloc[0]["TOTAL_USERS"] is not None:
@@ -139,8 +157,12 @@ def fraud_total_users(source: str = Query(...)) -> FraudTotalUsersResponse:
 
 
 @router.get("/fraud/eventual", response_model=FraudEventualResponse)
-def fraud_eventual(source: str = Query(...), min_failed: int = Query(3, ge=1)) -> FraudEventualResponse:
-    sql, params = queries.fraud_eventual_query(source, min_failed)
+def fraud_eventual(
+    source: str = Query(...),
+    min_failed: int = Query(3, ge=1),
+    table: str = Query("live"),
+) -> FraudEventualResponse:
+    sql, params = queries.fraud_eventual_query(_table_name(table), source, min_failed)
     df = db.fetch_df(sql, params)
     rows = [{k: metrics._clean(v) for k, v in rec.items()}
             for rec in df.to_dict(orient="records")] if not df.empty else []
@@ -152,12 +174,14 @@ def fraud_burst(
     source: str = Query(...),
     gap_seconds: int = Query(5, ge=1),
     min_pairs: int = Query(3, ge=1),
+    table: str = Query("live"),
 ) -> FraudBurstResponse:
-    total_sql, total_params = queries.fraud_total_users_query(source)
+    resolved = _table_name(table)
+    total_sql, total_params = queries.fraud_total_users_query(resolved, source)
     total_df = db.fetch_df(total_sql, total_params)
     total = int(total_df.iloc[0]["TOTAL_USERS"]) if not total_df.empty and total_df.iloc[0]["TOTAL_USERS"] is not None else 0
 
-    sql, params = queries.fraud_burst_query(source, gap_seconds, min_pairs)
+    sql, params = queries.fraud_burst_query(resolved, source, gap_seconds, min_pairs)
     df = db.fetch_df(sql, params)
     rows = [{k: metrics._clean(v) for k, v in rec.items()}
             for rec in df.to_dict(orient="records")] if not df.empty else []

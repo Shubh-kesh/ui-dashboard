@@ -1,17 +1,22 @@
 #!/usr/bin/env python
-"""Seed the local docai.LIVE_PHOTO_LOGS with realistic dashboard data.
+"""Seed the local docai catalog tables with realistic dashboard data.
 
-Applies dba/live_photo_logs_schema.sql (idempotent), then generates a
-multi-day, multi-source catalog with per-stage statuses, latencies,
-exceptions and multi-attempt user journeys (incl. a few burst/velocity
+Applies dba/live_photo_logs_schema.sql (idempotent, creates BOTH tables), then
+generates a multi-source catalog with per-stage statuses, latencies, exceptions,
+review columns and multi-attempt user journeys (incl. a few burst/velocity
 users) so every dashboard chart and the fraud analysis have signal.
+
+Data is split to mirror production:
+    LIVE_PHOTO_LOGS          - the most recent LIVE_DAYS days (default 7)
+    LIVE_PHOTO_LOGS_ARCHIVE  - the preceding ARCHIVE_DAYS days (default 23)
 
 Usage (from ui-dashboard/):
     <venv>/bin/python dba/local_dev_seed.py
     python dba/local_dev_seed.py
 
 Overrides via env: MSSQL_SERVER, MSSQL_USERNAME, MSSQL_PASSWORD, ODBC_DRIVER,
-SEED_DAYS, SEED_ROWS_PER_DAY, SEED_RANDOM_SEED.
+LIVE_PHOTO_TABLE, LIVE_PHOTO_ARCHIVE_TABLE, SEED_LIVE_DAYS, SEED_ARCHIVE_DAYS,
+SEED_ROWS_PER_DAY, SEED_RANDOM_SEED.
 """
 from __future__ import annotations
 
@@ -29,12 +34,18 @@ USERNAME = os.getenv("MSSQL_USERNAME", "sa")
 PASSWORD = os.getenv("MSSQL_PASSWORD", "LocalDev123!")
 DRIVER = os.getenv("ODBC_DRIVER", "ODBC Driver 18 for SQL Server")
 DATABASE = os.getenv("MSSQL_DATABASE", "docai")
+LIVE_TABLE = os.getenv("LIVE_PHOTO_TABLE", "LIVE_PHOTO_LOGS")
+ARCHIVE_TABLE = os.getenv("LIVE_PHOTO_ARCHIVE_TABLE", "LIVE_PHOTO_LOGS_ARCHIVE")
 
-DAYS = int(os.getenv("SEED_DAYS", "14"))
+LIVE_DAYS = int(os.getenv("SEED_LIVE_DAYS", "7"))
+ARCHIVE_DAYS = int(os.getenv("SEED_ARCHIVE_DAYS", "23"))
 ROWS_PER_DAY = int(os.getenv("SEED_ROWS_PER_DAY", "80"))
 RNG = random.Random(int(os.getenv("SEED_RANDOM_SEED", "42")))
 
 SOURCES = ["MOBILE_APP", "NETBANKING", "BRANCH_TAB"]
+
+USER_REVIEW_VALUES = ["ACCEPT", "REJECTED", "REVIEW PENDING", None]
+USER_REVIEW_WEIGHTS = [0.50, 0.15, 0.25, 0.10]
 
 # stage -> (request, response, status, duration, exception) column names.
 STAGES = {
@@ -135,6 +146,14 @@ def _blanks() -> dict:
     return row
 
 
+def _fraud_attempt_value() -> int | None:
+    if RNG.random() < 0.05:
+        return 1
+    if RNG.random() < 0.10:
+        return None
+    return 0
+
+
 def _attempt_rows(base: str, attempt_no: int, when: dt.datetime, source: str,
                   passed: bool, fail_stage: int | None, blink: bool) -> dict:
     row = _blanks()
@@ -161,16 +180,17 @@ def _attempt_rows(base: str, attempt_no: int, when: dt.datetime, source: str,
         "HEAD_NOD_REQUEST_HIT_DATETIME": None if blink else when,
         "SOURCE": source,
         "TRACKING_ID": f"TRK{base[-8:].upper()}{attempt_no}",
-        "FRAUD_ATTEMPT": None,
-        "USER_REVIEW": "REVIEW PENDING",
+        "FRAUD_ATTEMPT": _fraud_attempt_value(),
+        "USER_REVIEW": RNG.choices(USER_REVIEW_VALUES, weights=USER_REVIEW_WEIGHTS)[0],
     })
     return row
 
 
-def generate_rows() -> list[dict]:
+def generate_rows(days: int, start_offset: int) -> list[dict]:
+    """Generate rows for `days` calendar days starting `start_offset` days ago."""
     rows: list[dict] = []
     today = dt.date.today()
-    for day_offset in range(DAYS):
+    for day_offset in range(start_offset, start_offset + days):
         day = today - dt.timedelta(days=day_offset)
         for source in SOURCES:
             n = RNG.randint(int(ROWS_PER_DAY * 0.7), int(ROWS_PER_DAY * 1.3))
@@ -208,18 +228,18 @@ def generate_rows() -> list[dict]:
     return rows
 
 
-def insert_rows(rows: list[dict]) -> int:
+def insert_rows(table: str, rows: list[dict]) -> int:
     if not rows:
         return 0
     cols = list(rows[0].keys())
     placeholders = ", ".join("?" for _ in cols)
     col_sql = ", ".join(cols)
-    sql = f"INSERT INTO LIVE_PHOTO_LOGS ({col_sql}) VALUES ({placeholders})"
+    sql = f"INSERT INTO {table} ({col_sql}) VALUES ({placeholders})"
     values = [tuple(r[c] for c in cols) for r in rows]
 
     conn = _connect(DATABASE)
     cur = conn.cursor()
-    cur.execute("DELETE FROM LIVE_PHOTO_LOGS WHERE SOURCE IN (?, ?, ?)", *SOURCES)
+    cur.execute(f"DELETE FROM {table} WHERE SOURCE IN (?, ?, ?)", *SOURCES)
     cur.fast_executemany = True
     cur.executemany(sql, values)
     cur.close()
@@ -231,11 +251,14 @@ def main() -> None:
     if not SCHEMA_FILE.exists():
         sys.exit(f"missing {SCHEMA_FILE}")
     n_batches = apply_schema()
-    rows = generate_rows()
-    n = insert_rows(rows)
-    print(f"OK: {n_batches} schema batches applied on {SERVER}/{DATABASE}")
-    print(f"Seeded {n} LIVE_PHOTO_LOGS rows across {DAYS} days x {len(SOURCES)} sources "
-          f"({', '.join(SOURCES)})")
+    live_rows = generate_rows(LIVE_DAYS, 0)
+    archive_rows = generate_rows(ARCHIVE_DAYS, LIVE_DAYS)
+    n_live = insert_rows(LIVE_TABLE, live_rows)
+    n_archive = insert_rows(ARCHIVE_TABLE, archive_rows)
+    print(f"OK: {n_batches} schema batches applied on {SERVER}/{DATABASE} "
+          f"({LIVE_TABLE}, {ARCHIVE_TABLE})")
+    print(f"Seeded {n_live} rows -> {LIVE_TABLE} (last {LIVE_DAYS} days)")
+    print(f"Seeded {n_archive} rows -> {ARCHIVE_TABLE} (days {LIVE_DAYS}..{LIVE_DAYS + ARCHIVE_DAYS})")
 
 
 if __name__ == "__main__":

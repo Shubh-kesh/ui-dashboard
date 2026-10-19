@@ -11,6 +11,14 @@ vi.mock('./Plot', () => ({
 const breakdown = {
   Blink: [{ date: '2026-10-01', status: 'PASSED', count: 8 }],
   Callback: [{ date: '2026-10-01', status: 'FAILED', count: 3 }],
+  'Fraud Attempt': [
+    { date: '2026-10-01', status: 'FRAUD', count: 1 },
+    { date: '2026-10-01', status: 'GENUINE', count: 7 },
+  ],
+  'User Review': [
+    { date: '2026-10-01', status: 'ACCEPT', count: 5 },
+    { date: '2026-10-01', status: 'REVIEW PENDING', count: 3 },
+  ],
 };
 
 describe('StageTabs', () => {
@@ -23,6 +31,14 @@ describe('StageTabs', () => {
     render(<StageTabs breakdown={breakdown} />);
     await userEvent.click(screen.getByRole('tab', { name: 'Callback' }));
     expect(screen.getByTestId('stage-chart-Callback')).toBeInTheDocument();
+  });
+
+  it('renders the Fraud Attempt and User Review tabs', async () => {
+    render(<StageTabs breakdown={breakdown} />);
+    await userEvent.click(screen.getByRole('tab', { name: 'Fraud Attempt' }));
+    expect(screen.getByTestId('stage-chart-Fraud Attempt')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'User Review' }));
+    expect(screen.getByTestId('stage-chart-User Review')).toBeInTheDocument();
   });
 
   it('shows an empty state when a stage has no data', async () => {

@@ -10,8 +10,8 @@ data:
   MSSQL_USERNAME: "sa"                 # TODO: use a scoped login
   ODBC_DRIVER: "ODBC Driver 18 for SQL Server"
   LIVE_PHOTO_TABLE: "LIVE_PHOTO_LOGS"
-  DEFAULT_ROW_LIMIT: "5000"
-  MAX_ROW_LIMIT: "50000"
+  LIVE_PHOTO_ARCHIVE_TABLE: "LIVE_PHOTO_LOGS_ARCHIVE"
+  LIVE_WINDOW_DAYS: "7"
 ---
 # MSSQL password is a secret, not in the ConfigMap.
 apiVersion: v1

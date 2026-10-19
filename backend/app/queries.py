@@ -1,16 +1,20 @@
 """SQL builders for the dashboard. All catalog reads are direct T-SQL against
-the DocAI MSSQL table (no uidb proxy).
+the DocAI MSSQL tables (no uidb proxy).
 
 The catalog table is keyed by the full ``TXN_ID = "<txnid>~<attempt>"``; the
 fraud/attempt analysis parses ``BASE_TXN_ID`` (before the first ``_``) and
 ``ATTEMPT_NO`` (after the final ``~``).
+
+Reads are split across two tables in the same database:
+  * ``LIVE_PHOTO_LOGS``          - recent data (last ``LIVE_WINDOW_DAYS`` days)
+  * ``LIVE_PHOTO_LOGS_ARCHIVE``  - older data
+
+No ``TOP``/``LIMIT`` is applied: every builder returns the full window.
 """
 from __future__ import annotations
 
-from .config import get_settings
-
 # Authoritative catalog column set (kept identical to the historical
-# Streamlit uidb_client.CATALOG_COLUMNS).
+# Streamlit uidb_client.CATALOG_COLUMNS, plus the review columns).
 CATALOG_COLUMNS = [
     "ID", "TXN_ID", "REQUEST_HIT_DATETIME",
     "BLINK_REQUEST", "BLINK_RESPONSE", "BLINK_FACE_IN_CENTRE", "BLINK_MULTIFACE",
@@ -26,6 +30,7 @@ CATALOG_COLUMNS = [
     "VERIFY_TOKEN_RES_DURATION", "CALLBACK_RES_DURATION",
     "VERIFYTOKEN_REQ", "VERIFYTOKEN_RES", "VERIFYTOKEN_STATUS",
     "CALLBACK_REQ", "CALLBACK_RES", "CALLBACK_STATUS", "TRACKING_ID",
+    "FRAUD_ATTEMPT", "USER_REVIEW",
 ]
 
 # Effective event time: blink rows use REQUEST_HIT_DATETIME, head-nod-path
@@ -33,19 +38,18 @@ CATALOG_COLUMNS = [
 _EVENT_TIME = "COALESCE(REQUEST_HIT_DATETIME, HEAD_NOD_REQUEST_HIT_DATETIME)"
 
 
-def _table() -> str:
-    return get_settings().table
-
-
-def sources_query() -> str:
+def sources_query(table: str) -> str:
     return (
-        f"SELECT DISTINCT SOURCE FROM {_table()} WITH (NOLOCK) "
+        f"SELECT DISTINCT SOURCE FROM {table} WITH (NOLOCK) "
         "WHERE SOURCE IS NOT NULL ORDER BY SOURCE"
     )
 
 
-def catalog_query(limit: int, source: str | None = None) -> tuple[str, list]:
-    """SELECT the catalog columns for a [start, end] date window (inclusive)."""
+def catalog_query(table: str, source: str | None = None) -> tuple[str, list]:
+    """SELECT the full catalog for a [start, end] date window (inclusive).
+
+    No row limit is applied; the window is bounded by the two date params.
+    """
     cols = ", ".join(CATALOG_COLUMNS)
     where = [f"{_EVENT_TIME} >= ?", f"{_EVENT_TIME} < DATEADD(day, 1, ?)"]
     params: list = []
@@ -53,7 +57,7 @@ def catalog_query(limit: int, source: str | None = None) -> tuple[str, list]:
         where.append("SOURCE = ?")
         params.append(source)
     sql = (
-        f"SELECT TOP ({int(limit)}) {cols} FROM {_table()} WITH (NOLOCK) "
+        f"SELECT {cols} FROM {table} WITH (NOLOCK) "
         f"WHERE {' AND '.join(where)} ORDER BY {_EVENT_TIME} DESC"
     )
     return sql, params
@@ -120,8 +124,8 @@ per_user_velocity AS (
 """
 
 
-def fraud_summary_query(source: str, quick_success_threshold: int) -> tuple[str, list]:
-    sql = _PARSED_CTE.format(table=_table()) + f"""
+def fraud_summary_query(table: str, source: str, quick_success_threshold: int) -> tuple[str, list]:
+    sql = _PARSED_CTE.format(table=table) + f"""
 SELECT
     COUNT(*) AS TOTAL_USERS,
     SUM(CASE WHEN SUCCESS_ATTEMPT_NO IS NOT NULL AND SUCCESS_ATTEMPT_NO < {int(quick_success_threshold)}
@@ -131,17 +135,17 @@ FROM per_user
     return sql, [source]
 
 
-def fraud_total_users_query(source: str) -> tuple[str, list]:
+def fraud_total_users_query(table: str, source: str) -> tuple[str, list]:
     sql = (
         "SELECT COUNT(DISTINCT LEFT(TXN_ID, CHARINDEX('_', TXN_ID) - 1)) AS TOTAL_USERS "
-        f"FROM {_table()} WITH (NOLOCK) "
+        f"FROM {table} WITH (NOLOCK) "
         "WHERE SOURCE = ? AND CHARINDEX('_', TXN_ID) > 0 AND CHARINDEX('~', TXN_ID) > 0"
     )
     return sql, [source]
 
 
-def fraud_eventual_query(source: str, min_failed_attempts: int) -> tuple[str, list]:
-    sql = _PARSED_CTE.format(table=_table()) + f"""
+def fraud_eventual_query(table: str, source: str, min_failed_attempts: int) -> tuple[str, list]:
+    sql = _PARSED_CTE.format(table=table) + f"""
 SELECT
     pu.BASE_TXN_ID,
     pu.TOTAL_ATTEMPTS,
@@ -158,8 +162,8 @@ ORDER BY FAILED_ATTEMPTS_BEFORE_SUCCESS DESC
     return sql, [source]
 
 
-def fraud_burst_query(source: str, gap_seconds: int, min_pairs: int) -> tuple[str, list]:
-    sql = _PARSED_TIME_CTE.format(table=_table(), gap=int(gap_seconds)) + f"""
+def fraud_burst_query(table: str, source: str, gap_seconds: int, min_pairs: int) -> tuple[str, list]:
+    sql = _PARSED_TIME_CTE.format(table=table, gap=int(gap_seconds)) + f"""
 SELECT BASE_TXN_ID, TOTAL_ATTEMPTS, MIN_GAP_SECONDS, BURST_PAIRS
 FROM per_user_velocity
 WHERE BURST_PAIRS >= {int(min_pairs)}

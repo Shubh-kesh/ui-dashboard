@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 os.environ.setdefault("MSSQL_DATABASE", "docai")
 os.environ.setdefault("LIVE_PHOTO_TABLE", "LIVE_PHOTO_LOGS")
+os.environ.setdefault("LIVE_PHOTO_ARCHIVE_TABLE", "LIVE_PHOTO_LOGS_ARCHIVE")
 
 from app.config import get_settings  # noqa: E402
 from app.main import app  # noqa: E402
@@ -30,9 +31,11 @@ def client() -> TestClient:
 def make_catalog_df(n: int = 6, day: int = 1) -> pd.DataFrame:
     """A small catalog DataFrame with one row per attempt."""
     base = dt.datetime(2026, 10, day, 10, 0, 0)
+    reviews = ["ACCEPT", "REVIEW PENDING", "REJECTED", None]
     rows = []
     for i in range(n):
         callback_ok = i % 2 == 0
+        fraud = 1 if i == 0 else (None if i == 2 else 0)
         rows.append({
             "TXN_ID": f"20261{day:02d}100000_{i:08x}~1",
             "REQUEST_HIT_DATETIME": base + dt.timedelta(minutes=i),
@@ -56,6 +59,8 @@ def make_catalog_df(n: int = 6, day: int = 1) -> pd.DataFrame:
             "CALLBACK_EXCEPTION": None,
             "SOURCE": "MOBILE_APP",
             "TRACKING_ID": f"TRK{i}",
+            "FRAUD_ATTEMPT": fraud,
+            "USER_REVIEW": reviews[i % len(reviews)],
         })
     return pd.DataFrame(rows)
 

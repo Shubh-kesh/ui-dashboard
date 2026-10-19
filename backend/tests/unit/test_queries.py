@@ -6,49 +6,59 @@ import pytest
 from app import queries
 from app.config import Settings
 
+LIVE = "LIVE_PHOTO_LOGS"
+ARCHIVE = "LIVE_PHOTO_LOGS_ARCHIVE"
 
-def test_catalog_query_includes_window_and_source():
-    sql, params = queries.catalog_query(100, source="MOBILE_APP")
-    assert "SELECT TOP (100)" in sql
+
+def test_catalog_query_has_no_limit_and_includes_window_and_source():
+    sql, params = queries.catalog_query(LIVE, source="MOBILE_APP")
+    assert "SELECT TOP" not in sql.upper()
+    assert f"FROM {LIVE}" in sql
     assert "SOURCE = ?" in sql
     assert "DATEADD(day, 1, ?)" in sql
     assert params == ["MOBILE_APP"]
 
 
 def test_catalog_query_no_source_filter():
-    sql, params = queries.catalog_query(50)
+    sql, params = queries.catalog_query(LIVE)
     assert "SOURCE = ?" not in sql
     assert params == []
 
 
-def test_catalog_columns_cover_every_stage():
-    for cols in queries.STAGES.values() if hasattr(queries, "STAGES") else []:
-        pass  # STAGES lives in services.metrics, not here
+def test_catalog_query_targets_archive_table():
+    sql, _ = queries.catalog_query(ARCHIVE)
+    assert f"FROM {ARCHIVE}" in sql
+
+
+def test_catalog_columns_cover_stages_and_review_columns():
     for column in ["TXN_ID", "REQUEST_HIT_DATETIME", "SOURCE", "CALLBACK_STATUS",
-                   "VERIFY_TOKEN_RES_DURATION", "TRACKING_ID"]:
+                   "VERIFY_TOKEN_RES_DURATION", "TRACKING_ID",
+                   "FRAUD_ATTEMPT", "USER_REVIEW"]:
         assert column in queries.CATALOG_COLUMNS
 
 
 def test_sources_query_shape():
-    assert "DISTINCT SOURCE" in queries.sources_query()
+    assert "DISTINCT SOURCE" in queries.sources_query(LIVE)
+    assert ARCHIVE in queries.sources_query(ARCHIVE)
 
 
 def test_fraud_summary_query_parameterized_source_and_threshold():
-    sql, params = queries.fraud_summary_query("NETBANKING", 4)
+    sql, params = queries.fraud_summary_query(LIVE, "NETBANKING", 4)
     assert "SOURCE = ?" in sql
     assert params == ["NETBANKING"]
     assert "SUCCESS_ATTEMPT_NO < 4" in sql
 
 
 def test_fraud_burst_query_embeds_gap_and_params_source():
-    sql, params = queries.fraud_burst_query("BRANCH_TAB", 7, 2)
+    sql, params = queries.fraud_burst_query(LIVE, "BRANCH_TAB", 7, 2)
     assert "GAP_SECONDS <= 7" in sql
     assert "BURST_PAIRS >= 2" in sql
     assert params == ["BRANCH_TAB"]
 
 
-def test_fraud_eventual_query_min_failed():
-    sql, params = queries.fraud_eventual_query("MOBILE_APP", 5)
+def test_fraud_eventual_query_min_failed_and_archive_target():
+    sql, params = queries.fraud_eventual_query(ARCHIVE, "MOBILE_APP", 5)
+    assert ARCHIVE in sql
     assert ">= 5" in sql
     assert params == ["MOBILE_APP"]
 
@@ -58,5 +68,15 @@ def test_table_identifier_validation_rejects_injection():
         Settings(table="LIVE_PHOTO_LOGS; DROP TABLE users")
     with pytest.raises(ValueError):
         Settings(table="has space")
+    with pytest.raises(ValueError):
+        Settings(archive_table="bad;name")
     # Valid identifiers (incl. schema-qualified) are accepted.
     assert Settings(table="docai.LIVE_PHOTO_LOGS").table == "docai.LIVE_PHOTO_LOGS"
+
+
+def test_table_for_resolves_selectors():
+    s = Settings()
+    assert s.table_for("live") == s.table
+    assert s.table_for("archive") == s.archive_table
+    with pytest.raises(ValueError):
+        s.table_for("both")

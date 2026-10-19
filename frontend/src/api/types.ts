@@ -1,19 +1,19 @@
 // Response types mirroring the FastAPI backend contract (backend/app/models.py).
 
+export type TableKey = 'live' | 'archive';
+
+export type Granularity = 'auto' | '15m' | '30m' | '1h' | '6h' | '1d';
+
 export interface KPIs {
   total_txns: number;
   callback_success_rate: number | null;
   avg_callback_latency: number | null;
 }
 
-export interface DailyVolumePoint {
-  date: string | null;
+export interface TimeSeriesPoint {
+  bucket: string;
   count: number;
-}
-
-export interface FunnelPoint {
-  stage: string;
-  count: number;
+  delta_pct: number | null;
 }
 
 export interface StageStatusPoint {
@@ -27,12 +27,11 @@ export interface LatencyStat {
   mean: number;
   p50: number;
   p95: number;
+  min: number;
+  q1: number;
+  q3: number;
+  max: number;
   n: number;
-}
-
-export interface LatencyRawPoint {
-  stage: string;
-  duration: number;
 }
 
 export interface DashboardResponse {
@@ -40,11 +39,14 @@ export interface DashboardResponse {
   start: string;
   end: string;
   source: string | null;
+  table: string;
+  granularity: Granularity;
+  start_time: string | null;
+  end_time: string | null;
   kpis: KPIs;
-  daily_volume: DailyVolumePoint[];
-  funnel: FunnelPoint[];
+  time_series: TimeSeriesPoint[];
   stage_breakdown: Record<string, StageStatusPoint[]>;
-  latency: { stats: LatencyStat[]; raw: LatencyRawPoint[] };
+  latency: { stats: LatencyStat[] };
   exceptions: Record<string, unknown>[];
 }
 
@@ -80,5 +82,8 @@ export interface DashboardQuery {
   start: string;
   end: string;
   source?: string;
-  limit?: number;
+  table?: TableKey;
+  granularity?: Granularity;
+  start_time?: string;
+  end_time?: string;
 }

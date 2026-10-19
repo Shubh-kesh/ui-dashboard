@@ -1,27 +1,33 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { FraudBurstResponse, FraudEventualResponse, FraudSummaryResponse } from '../api/types';
+import type {
+  FraudBurstResponse,
+  FraudEventualResponse,
+  FraudSummaryResponse,
+  TableKey,
+} from '../api/types';
 import { fmtNumber, fmtPct } from '../lib/format';
 
 interface Props {
   sources: string[];
+  table: TableKey;
 }
 
-export default function FraudSection({ sources }: Props) {
+export default function FraudSection({ sources, table }: Props) {
   const [source, setSource] = useState('');
   const [threshold, setThreshold] = useState(10);
   const [gapSeconds, setGapSeconds] = useState(2);
   const [minPairs, setMinPairs] = useState(3);
 
   const summary = useMutation<FraudSummaryResponse>({
-    mutationFn: () => api.getFraudSummary(source, threshold),
+    mutationFn: () => api.getFraudSummary(source, threshold, table),
   });
   const eventual = useMutation<FraudEventualResponse>({
-    mutationFn: () => api.getFraudEventual(source, threshold),
+    mutationFn: () => api.getFraudEventual(source, threshold, table),
   });
   const burst = useMutation<FraudBurstResponse>({
-    mutationFn: () => api.getFraudBurst(source, gapSeconds, minPairs),
+    mutationFn: () => api.getFraudBurst(source, gapSeconds, minPairs, table),
   });
 
   const disabled = !source || summary.isPending || eventual.isPending || burst.isPending;

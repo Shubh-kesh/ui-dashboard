@@ -9,13 +9,20 @@ const STAGE_ORDER: string[] = [
   'Image Seg',
   'Verify Token',
   'Callback',
+  'Fraud Attempt',
+  'User Review',
 ];
 
 const STATUS_COLORS: Record<string, string> = {
   PASSED: '#16a34a',
   FAILED: '#dc2626',
-  NULL: '#94a3b8',
+  GENUINE: '#16a34a',
+  FRAUD: '#dc2626',
+  ACCEPT: '#16a34a',
+  REJECTED: '#dc2626',
+  'REVIEW PENDING': '#f59e0b',
   PENDING: '#f59e0b',
+  NULL: '#94a3b8',
 };
 
 function StageStatusChart({ stage, rows }: { stage: string; rows: StageStatusPoint[] }) {
@@ -54,7 +61,7 @@ export default function StageTabs({ breakdown }: Props) {
   const rows = breakdown[active] ?? [];
   return (
     <section>
-      <h2 className="mb-3 text-lg font-semibold text-slate-800">Status by Stage</h2>
+      <h2 className="mb-3 text-lg font-semibold text-slate-800">Status by stage</h2>
       <div className="mb-3 flex flex-wrap gap-2" role="tablist">
         {STAGE_ORDER.map((stage) => (
           <button

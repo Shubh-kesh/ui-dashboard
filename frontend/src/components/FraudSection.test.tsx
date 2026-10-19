@@ -16,7 +16,7 @@ function renderSection() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <FraudSection sources={['SRC_A']} />
+      <FraudSection sources={['SRC_A']} table="live" />
     </QueryClientProvider>,
   );
 }
@@ -54,9 +54,9 @@ describe('FraudSection', () => {
     await userEvent.selectOptions(screen.getByTestId('fraud-source'), 'SRC_A');
     await userEvent.click(screen.getByRole('button', { name: /run analysis/i }));
 
-    await waitFor(() => expect(mockApi.getFraudSummary).toHaveBeenCalledWith('SRC_A', 10));
-    expect(mockApi.getFraudEventual).toHaveBeenCalledWith('SRC_A', 10);
-    expect(mockApi.getFraudBurst).toHaveBeenCalledWith('SRC_A', 2, 3);
+    await waitFor(() => expect(mockApi.getFraudSummary).toHaveBeenCalledWith('SRC_A', 10, 'live'));
+    expect(mockApi.getFraudEventual).toHaveBeenCalledWith('SRC_A', 10, 'live');
+    expect(mockApi.getFraudBurst).toHaveBeenCalledWith('SRC_A', 2, 3, 'live');
 
     expect(await screen.findByText('100')).toBeInTheDocument();
     expect(await screen.findByText('b2~5')).toBeInTheDocument();

@@ -16,6 +16,8 @@ except Exception:  # pragma: no cover - dotenv is optional
 
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
 
+TABLE_KEYS = ("live", "archive")
+
 
 def _int_env(name: str, default: int) -> int:
     try:
@@ -32,12 +34,20 @@ class Settings:
     mssql_password: str = os.getenv("MSSQL_PASSWORD", "LocalDev123!")
     odbc_driver: str = os.getenv("ODBC_DRIVER", "ODBC Driver 18 for SQL Server")
     table: str = os.getenv("LIVE_PHOTO_TABLE", "LIVE_PHOTO_LOGS")
-    default_row_limit: int = _int_env("DEFAULT_ROW_LIMIT", 5000)
-    max_row_limit: int = _int_env("MAX_ROW_LIMIT", 50000)
+    archive_table: str = os.getenv("LIVE_PHOTO_ARCHIVE_TABLE", "LIVE_PHOTO_LOGS_ARCHIVE")
+    live_window_days: int = _int_env("LIVE_WINDOW_DAYS", 7)
 
     def __post_init__(self) -> None:
-        if not _IDENT_RE.match(self.table):
-            raise ValueError(f"Invalid LIVE_PHOTO_TABLE identifier: {self.table!r}")
+        for name, value in (("LIVE_PHOTO_TABLE", self.table),
+                            ("LIVE_PHOTO_ARCHIVE_TABLE", self.archive_table)):
+            if not _IDENT_RE.match(value):
+                raise ValueError(f"Invalid {name} identifier: {value!r}")
+
+    def table_for(self, key: str) -> str:
+        """Resolve a table selector ('live' | 'archive') to a table name."""
+        if key not in TABLE_KEYS:
+            raise ValueError(f"unknown table selector {key!r}; expected one of {TABLE_KEYS}")
+        return self.table if key == "live" else self.archive_table
 
     def connection_string(self) -> str:
         return (
