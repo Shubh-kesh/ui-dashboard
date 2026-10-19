@@ -19,10 +19,15 @@ class SourcesResponse(BaseModel):
     sources: list[str]
 
 
+class RangeResponse(BaseModel):
+    table: str
+    min: str | None = None
+    max: str | None = None
+    rows: int
+
+
 class KPIs(_Base):
     total_txns: int
-    callback_success_rate: float | None = None
-    avg_callback_latency: float | None = None
 
 
 class TimeSeriesPoint(_Base):

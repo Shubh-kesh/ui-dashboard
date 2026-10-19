@@ -17,6 +17,7 @@ from ..models import (
     FraudSummaryResponse,
     FraudTotalUsersResponse,
     HealthResponse,
+    RangeResponse,
     RawResponse,
     SourcesResponse,
 )
@@ -59,6 +60,21 @@ def sources(table: str = Query("live")) -> SourcesResponse:
     df = db.fetch_df(queries.sources_query(_table_name(table)))
     values = [str(v) for v in df["SOURCE"].dropna().tolist()] if "SOURCE" in df.columns else []
     return SourcesResponse(sources=sorted(set(values)))
+
+
+@router.get("/range", response_model=RangeResponse)
+def data_range(table: str = Query("live")) -> RangeResponse:
+    resolved = _table_name(table)
+    df = db.fetch_df(queries.range_query(resolved))
+    if df.empty:
+        return RangeResponse(table=resolved, rows=0)
+    rec = df.iloc[0]
+    return RangeResponse(
+        table=resolved,
+        min=metrics._clean(rec.get("MIN_TS")),
+        max=metrics._clean(rec.get("MAX_TS")),
+        rows=int(rec.get("N") or 0),
+    )
 
 
 @router.get("/dashboard", response_model=DashboardResponse)

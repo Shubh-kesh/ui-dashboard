@@ -52,6 +52,13 @@ def test_catalog_query_returns_window_rows(table):
         assert column in df.columns
 
 
+@pytest.mark.parametrize("table", ["LIVE_PHOTO_LOGS", "LIVE_PHOTO_LOGS_ARCHIVE"])
+def test_range_query_reports_window(table):
+    df = db.fetch_df(queries.range_query(table))
+    assert int(df.iloc[0]["N"]) > 0
+    assert df.iloc[0]["MIN_TS"] is not None and df.iloc[0]["MAX_TS"] is not None
+
+
 def test_live_and_archive_are_disjoint_windows():
     live = db.fetch_all(
         f"SELECT MIN(COALESCE(REQUEST_HIT_DATETIME, HEAD_NOD_REQUEST_HIT_DATETIME)) AS MN "

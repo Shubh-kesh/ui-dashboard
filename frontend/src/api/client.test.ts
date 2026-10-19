@@ -55,6 +55,14 @@ describe('api client', () => {
     expect(fetchMock.mock.calls[0][0] as string).toContain('table=archive');
   });
 
+  it('fetches the available range for a table', async () => {
+    const range = { table: 'LIVE_PHOTO_LOGS_ARCHIVE', min: '2026-09-20 00:00:00', max: '2026-10-12 23:59:59', rows: 8811 };
+    const fetchMock = mockFetch(range);
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(api.getRange('archive')).resolves.toEqual(range);
+    expect(fetchMock.mock.calls[0][0] as string).toContain('/api/range?table=archive');
+  });
+
   it('passes the table through to fraud calls', async () => {
     const fetchMock = mockFetch({ source: 'A', total_users: 0, quick_success_users: 0, quick_success_pct: 0 });
     vi.stubGlobal('fetch', fetchMock);

@@ -66,10 +66,12 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Serves `GET /api/health`, `/api/sources`, `/api/dashboard`, `/api/raw`,
-`/api/raw.csv`, `/api/fraud/{summary,total-users,eventual,burst}`. All support a
-`table=live|archive` selector; `/api/dashboard` also takes `granularity`
+Serves `GET /api/health`, `/api/sources`, `/api/range`, `/api/dashboard`,
+`/api/raw`, `/api/raw.csv`, `/api/fraud/{summary,total-users,eventual,burst}`. All
+support a `table=live|archive` selector; `/api/dashboard` also takes `granularity`
 (`auto|15m|30m|1h|6h|1d`) and `start_time`/`end_time` (HH:MM, applied per day).
+`/api/range` returns the available data window and row count for a table; the UI
+uses it to snap the date picker when switching datasets.
 
 ### 4. Frontend
 
@@ -81,15 +83,17 @@ npm run dev        # http://localhost:5173, proxies /api -> :8000
 
 ## Dashboard sections
 
-- **KPIs** – total transactions, callback success rate, average callback latency.
+- **KPIs** – total transactions.
 - **Load over time** – volume per interval (bars) with bucket-over-bucket
   variation % (secondary axis); granularity + time-of-day window are selectable.
-- **Status by stage** – per-date status breakdown for each stage, plus
-  **Fraud Attempt** (`FRAUD`/`GENUINE`/`NULL`) and **User Review**
+- **Status by stage** – per-date breakdown of the raw DB status values for each
+  stage (arbitrary codes such as `FB01`/`FB02` are shown with distinct colours),
+  plus **Fraud Attempt** (`FRAUD`/`GENUINE`/`NULL`) and **User Review**
   (`ACCEPT`/`REJECTED`/`REVIEW PENDING`/`NULL`).
-- **Latency** – per-stage min/Q1/median/Q3/max/mean/P95 table and box plot
-  (computed server-side; no raw points shipped).
-- **Exceptions**, **Raw data** (+ CSV download) and **Fraud analysis**.
+- **Latency** – per-stage min/median/max/mean table and box plot (computed
+  server-side; no raw points shipped).
+- **Exceptions** (collapsible), **Raw data** (collapsible, + CSV download) and
+  **Fraud analysis**.
 
 ## Tests
 

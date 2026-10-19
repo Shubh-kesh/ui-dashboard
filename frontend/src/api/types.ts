@@ -6,8 +6,6 @@ export type Granularity = 'auto' | '15m' | '30m' | '1h' | '6h' | '1d';
 
 export interface KPIs {
   total_txns: number;
-  callback_success_rate: number | null;
-  avg_callback_latency: number | null;
 }
 
 export interface TimeSeriesPoint {
@@ -54,6 +52,13 @@ export interface RawResponse {
   columns: string[];
   rows: Record<string, unknown>[];
   count: number;
+}
+
+export interface RangeResponse {
+  table: string;
+  min: string | null;
+  max: string | null;
+  rows: number;
 }
 
 export interface FraudSummaryResponse {

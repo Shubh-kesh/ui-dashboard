@@ -45,6 +45,14 @@ def sources_query(table: str) -> str:
     )
 
 
+def range_query(table: str) -> str:
+    """Available data window + row count for a table."""
+    return (
+        f"SELECT COUNT(*) AS N, MIN({_EVENT_TIME}) AS MIN_TS, MAX({_EVENT_TIME}) AS MAX_TS "
+        f"FROM {table} WITH (NOLOCK)"
+    )
+
+
 def catalog_query(table: str, source: str | None = None) -> tuple[str, list]:
     """SELECT the full catalog for a [start, end] date window (inclusive).
 

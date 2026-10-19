@@ -25,6 +25,9 @@ def fake_db(monkeypatch, catalog_df):
                                   "SUCCESS_ATTEMPT_NO": 5,
                                   "FAILED_ATTEMPTS_BEFORE_SUCCESS": 4,
                                   "SUCCESS_TXN_ID": "b2~5"}])
+        if "MIN_TS" in sql:
+            return pd.DataFrame([{"N": 42, "MIN_TS": "2026-09-20 00:06:47",
+                                  "MAX_TS": "2026-10-12 23:59:50"}])
         return catalog_df
 
     monkeypatch.setattr(db, "fetch_df", fake_fetch_df)
@@ -52,6 +55,14 @@ def test_health_degraded_when_db_down(client, monkeypatch, catalog_df):
 def test_sources_deduped_and_sorted(client, fake_db):
     body = client.get("/api/sources").json()
     assert body["sources"] == ["MOBILE_APP", "NETBANKING"]
+
+
+def test_range_reports_available_window(client, fake_db):
+    body = client.get("/api/range", params={"table": "archive"}).json()
+    assert body["table"] == "LIVE_PHOTO_LOGS_ARCHIVE"
+    assert body["rows"] == 42
+    assert body["min"] == "2026-09-20 00:06:47"
+    assert body["max"] == "2026-10-12 23:59:50"
 
 
 def test_dashboard_payload(client, fake_db):

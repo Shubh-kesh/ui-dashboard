@@ -8,6 +8,12 @@ describe('ExceptionsTable', () => {
     expect(screen.getByText(/no exceptions/i)).toBeInTheDocument();
   });
 
+  it('is collapsible like the raw data section', () => {
+    const { container } = render(<ExceptionsTable rows={[]} />);
+    expect(container.querySelector('details')).not.toBeNull();
+    expect(container.querySelector('summary')).toHaveTextContent('Exceptions');
+  });
+
   it('renders exception rows with their columns', () => {
     render(
       <ExceptionsTable

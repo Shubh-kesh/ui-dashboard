@@ -15,8 +15,15 @@ describe('LatencyPanel', () => {
     render(<LatencyPanel stats={stats} />);
     expect(screen.getByTestId('latency-table')).toBeInTheDocument();
     expect(screen.getByText('Blink')).toBeInTheDocument();
-    expect(screen.getByText('0.600s')).toBeInTheDocument(); // q3
+    expect(screen.getByText('0.200s')).toBeInTheDocument(); // min
     expect(screen.getByTestId('latency-box')).toBeInTheDocument();
+  });
+
+  it('omits the Q1, Q3 and P95 columns', () => {
+    render(<LatencyPanel stats={stats} />);
+    expect(screen.queryByText('Q1 (s)')).not.toBeInTheDocument();
+    expect(screen.queryByText('Q3 (s)')).not.toBeInTheDocument();
+    expect(screen.queryByText('P95 (s)')).not.toBeInTheDocument();
   });
 
   it('shows an empty state without stats', () => {

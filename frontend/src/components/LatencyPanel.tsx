@@ -17,9 +17,12 @@ export default function LatencyPanel({ stats }: Props) {
   }
 
   // Box plot built from server-side summary stats (no raw points shipped).
+  // `x` places each stage on the category axis; without it every precomputed
+  // box collapses onto x=0 and the stages overlap.
   const boxTraces = stats.map((s) => ({
     type: 'box',
     name: s.stage,
+    x: [s.stage],
     q1: [s.q1],
     median: [s.p50],
     q3: [s.q3],
@@ -31,12 +34,9 @@ export default function LatencyPanel({ stats }: Props) {
 
   const columns: { key: keyof LatencyStat; label: string }[] = [
     { key: 'min', label: 'Min (s)' },
-    { key: 'q1', label: 'Q1 (s)' },
     { key: 'p50', label: 'Median (s)' },
-    { key: 'q3', label: 'Q3 (s)' },
     { key: 'max', label: 'Max (s)' },
     { key: 'mean', label: 'Mean (s)' },
-    { key: 'p95', label: 'P95 (s)' },
   ];
 
   return (

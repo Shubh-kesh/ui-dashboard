@@ -72,6 +72,10 @@ EXCEPTIONS = [
     "Callback delivery failed",
 ]
 
+# Real deployments emit specific failure codes (e.g. FB01/FB02) in the status
+# columns; mix them in so "Status by stage" shows raw DB values.
+FAILURE_CODES = ["FAILED", "FB01", "FB02", "FB03"]
+
 
 def batches(sql_text: str):
     """Yield statement batches split on standalone GO lines."""
@@ -129,7 +133,8 @@ def _stage_attempt(progress: int, fail_at: int | None) -> dict:
         passed = fail_at is None or idx < fail_at
         row[req_col] = 1
         row[res_col] = 1 if passed else 0
-        row[status_col] = "PASSED" if passed else "FAILED"
+        row[status_col] = "PASSED" if passed else RNG.choices(
+            FAILURE_CODES, weights=[0.55, 0.2, 0.15, 0.10])[0]
         row[dur_col] = round(RNG.uniform(0.08, 1.8) if passed else RNG.uniform(0.5, 4.0), 3)
         if exc_col:
             row[exc_col] = None if passed else RNG.choice(EXCEPTIONS)

@@ -25,16 +25,45 @@ const STATUS_COLORS: Record<string, string> = {
   NULL: '#94a3b8',
 };
 
+// Deterministic palette so arbitrary DB status codes (FB01, FB02, ...) each get
+// a distinct, stable colour and appear in the legend.
+const FALLBACK_PALETTE = [
+  '#0ea5e9',
+  '#8b5cf6',
+  '#f97316',
+  '#14b8a6',
+  '#e11d48',
+  '#a855f7',
+  '#eab308',
+  '#2563eb',
+  '#db2777',
+  '#65a30d',
+];
+
+function orderStatuses(rows: StageStatusPoint[]): string[] {
+  const present = [...new Set(rows.map((r) => r.status))];
+  const known = present.filter((s) => s in STATUS_COLORS).sort();
+  const unknown = present.filter((s) => !(s in STATUS_COLORS)).sort();
+  return [...known, ...unknown];
+}
+
+function statusColor(status: string, statuses: string[]): string {
+  if (status in STATUS_COLORS) return STATUS_COLORS[status];
+  const unknown = statuses.filter((s) => !(s in STATUS_COLORS));
+  const idx = unknown.indexOf(status);
+  return FALLBACK_PALETTE[idx % FALLBACK_PALETTE.length];
+}
+
 function StageStatusChart({ stage, rows }: { stage: string; rows: StageStatusPoint[] }) {
   const dates = [...new Set(rows.map((r) => r.date ?? '—'))].sort();
-  const statuses = [...new Set(rows.map((r) => r.status))];
+  const statuses = orderStatuses(rows);
   const lookup = new Map(rows.map((r) => [`${r.date ?? '—'}|${r.status}`, r.count]));
   const traces = statuses.map((status) => ({
     type: 'bar',
     name: status,
     x: dates,
     y: dates.map((d) => lookup.get(`${d}|${status}`) ?? 0),
-    marker: { color: STATUS_COLORS[status] ?? '#0ea5e9' },
+    marker: { color: statusColor(status, statuses) },
   }));
   return (
     <Plot

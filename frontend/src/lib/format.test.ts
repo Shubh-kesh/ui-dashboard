@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fmtNumber, fmtPct, fmtSeconds } from './format';
+import { addDaysISO, fmtNumber, fmtPct, fmtSeconds } from './format';
 
 describe('format helpers', () => {
   it('formats numbers with separators', () => {
@@ -19,5 +19,10 @@ describe('format helpers', () => {
   it('formats seconds', () => {
     expect(fmtSeconds(0.5)).toBe('0.500s');
     expect(fmtSeconds(null)).toBe('—');
+  });
+
+  it('adds days across month boundaries', () => {
+    expect(addDaysISO('2026-10-12', -6)).toBe('2026-10-06');
+    expect(addDaysISO('2026-03-01', -1)).toBe('2026-02-28');
   });
 });

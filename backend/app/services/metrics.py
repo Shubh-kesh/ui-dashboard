@@ -272,20 +272,8 @@ def exception_rows(df: pd.DataFrame) -> list[dict]:
 
 def kpi_summary(df: pd.DataFrame) -> dict:
     if df.empty:
-        return {"total_txns": 0, "callback_success_rate": None, "avg_callback_latency": None}
-    callback_rate = None
-    if "CALLBACK_RES" in df.columns:
-        callback_rate = round(100 * float(df["CALLBACK_RES"].eq(True).mean()), 1)
-    avg_latency = None
-    if "CALLBACK_RES_DURATION" in df.columns:
-        vals = pd.to_numeric(df["CALLBACK_RES_DURATION"], errors="coerce").dropna()
-        if not vals.empty:
-            avg_latency = round(float(vals.mean()), 3)
-    return {
-        "total_txns": int(len(df)),
-        "callback_success_rate": callback_rate,
-        "avg_callback_latency": avg_latency,
-    }
+        return {"total_txns": 0}
+    return {"total_txns": int(len(df))}
 
 
 def _window_dates(df: pd.DataFrame, start: dt.date | None, end: dt.date | None) -> tuple[dt.date, dt.date]:

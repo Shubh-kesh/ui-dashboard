@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { DashboardQuery, Granularity, TableKey } from '../api/types';
-import { daysAgoISO, todayISO } from '../lib/format';
+import { addDaysISO, daysAgoISO, todayISO } from '../lib/format';
 import { LIVE_WINDOW_DAYS } from '../lib/config';
 import FilterBar from '../components/FilterBar';
 import KpiCards from '../components/KpiCards';
@@ -24,7 +24,7 @@ export default function DashboardPage() {
   const [endTime, setEndTime] = useState('23:59');
 
   // The live table only holds the most recent LIVE_WINDOW_DAYS days.
-  const cutoff = daysAgoISO(LIVE_WINDOW_DAYS);
+  const cutoff = daysAgoISO(LIVE_WINDOW_DAYS - 1);
 
   const changeStart = (v: string) => {
     setStart(v);
@@ -57,6 +57,25 @@ export default function DashboardPage() {
     queryKey: ['sources', table],
     queryFn: () => api.getSources(table),
   });
+  const range = useQuery({
+    queryKey: ['range', table],
+    queryFn: () => api.getRange(table),
+  });
+
+  // When the selected dataset has no rows in the current window (e.g. switching
+  // to Archive while the picker still shows the live window), snap the picker to
+  // the most recent LIVE_WINDOW_DAYS of that dataset.
+  useEffect(() => {
+    const r = range.data;
+    if (!r?.min || !r?.max) return;
+    const min = r.min.slice(0, 10);
+    const max = r.max.slice(0, 10);
+    if (end >= min && start <= max) return;
+    const nextStart = addDaysISO(max, -(LIVE_WINDOW_DAYS - 1));
+    setStart(nextStart < min ? min : nextStart);
+    setEnd(max);
+  }, [range.data, start, end]);
+
   const dashboard = useQuery({
     queryKey: ['dashboard', query],
     queryFn: () => api.getDashboard(query),
@@ -65,6 +84,11 @@ export default function DashboardPage() {
     queryKey: ['raw', rawQuery],
     queryFn: () => api.getRaw(rawQuery),
   });
+
+  const rangeInfo =
+    range.data?.min && range.data?.max
+      ? `Available: ${range.data.min.slice(0, 10)} → ${range.data.max.slice(0, 10)} (${range.data.rows.toLocaleString()} rows)`
+      : undefined;
 
   const spansBoundary = start < cutoff && end >= cutoff;
   let notice: string | undefined;
@@ -78,11 +102,10 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">LivePhoto KYC Dashboard</h1>
-          <p className="text-sm text-slate-500">Liveness, authenticity and callback metrics.</p>
-        </div>
+      <header className="text-center">
+        <h1 className="text-2xl font-bold text-slate-900">LivePhoto Dashboard</h1>
+        <p className="text-sm text-slate-500">Liveness and authenticity metrics.</p>
+        {rangeInfo && <p className="mt-1 text-xs text-slate-400">{rangeInfo}</p>}
       </header>
 
       <FilterBar

@@ -16,17 +16,13 @@ def _event_df(times: list[dt.datetime]) -> pd.DataFrame:
     })
 
 
-def test_kpi_summary_counts_and_rates():
+def test_kpi_summary_counts():
     df = make_catalog_df(n=6)
-    kpis = metrics.kpi_summary(df)
-    assert kpis["total_txns"] == 6
-    assert kpis["callback_success_rate"] == 50.0
-    assert kpis["avg_callback_latency"] == 1.0
+    assert metrics.kpi_summary(df) == {"total_txns": 6}
 
 
 def test_kpi_summary_empty():
-    kpis = metrics.kpi_summary(pd.DataFrame())
-    assert kpis == {"total_txns": 0, "callback_success_rate": None, "avg_callback_latency": None}
+    assert metrics.kpi_summary(pd.DataFrame()) == {"total_txns": 0}
 
 
 def test_time_series_buckets_by_granularity():
@@ -74,6 +70,14 @@ def test_stage_status_breakdown():
     out = metrics.stage_status_breakdown(make_catalog_df(n=4), "Callback")
     statuses = {r["status"]: r["count"] for r in out}
     assert statuses == {"PASSED": 2, "FAILED": 2}
+
+
+def test_stage_status_breakdown_passes_through_raw_db_values():
+    df = make_catalog_df(n=3)
+    df["BLINK_STATUS"] = ["PASSED", "FB01", "FB02"]
+    out = metrics.stage_status_breakdown(df, "Blink")
+    statuses = {r["status"]: r["count"] for r in out}
+    assert statuses == {"PASSED": 1, "FB01": 1, "FB02": 1}
 
 
 def test_fraud_attempt_breakdown_labels():

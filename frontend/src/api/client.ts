@@ -4,6 +4,7 @@ import type {
   FraudBurstResponse,
   FraudEventualResponse,
   FraudSummaryResponse,
+  RangeResponse,
   RawResponse,
   TableKey,
 } from './types';
@@ -61,6 +62,8 @@ export const api = {
 
   getSources: (table: TableKey) =>
     getJson<{ sources: string[] }>(`/api/sources${qs({ table })}`).then((r) => r.sources),
+
+  getRange: (table: TableKey) => getJson<RangeResponse>(`/api/range${qs({ table })}`),
 
   getRaw: (q: DashboardQuery) => getJson<RawResponse>(`/api/raw${qs(windowParams(q))}`),
 
