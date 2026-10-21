@@ -16,6 +16,13 @@
  *   sqlcmd -S localhost,1433 -U sa -P 'LocalDev123!' -i live_photo_logs_schema.sql
  *   <venv>/bin/python dba/local_dev_seed.py    (no sqlcmd needed; pyodbc)
  */
+-- Create the database if this is a fresh container (no persistent volume yet).
+IF DB_ID(N'docai') IS NULL
+BEGIN
+    CREATE DATABASE docai;
+END
+GO
+
 USE docai;
 GO
 

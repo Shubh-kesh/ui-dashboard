@@ -8,9 +8,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .api.routes import router
+from .config import get_settings
 from .db import DatabaseError
 
 app = FastAPI(title="ui-dashboard API", version="0.1.0")
+
+
+@app.on_event("startup")
+def _validate_settings() -> None:
+    """Fail fast in non-DEV if Secret Manager credentials cannot be resolved."""
+    get_settings().validate_credentials()
 
 _allowed = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
 app.add_middleware(

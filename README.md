@@ -40,10 +40,26 @@ deployment.yaml   K8s ConfigMap/Secret + backend & frontend Deployments/Services
 
 ### 1. Database (Azure SQL Edge)
 
+Easiest (idempotent — reuses the container if it already exists, so no
+"name already in use" / "port already allocated" errors):
+
 ```bash
-docker run -d --name aikyc-mssql -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='LocalDev123!' \
-  -p 1433:1433 mcr.microsoft.com/azure-sql-edge
+scripts/start-db.sh
 ```
+
+Or manually — start the existing container if present, otherwise create it:
+
+```bash
+docker start aikyc-mssql 2>/dev/null || \
+docker run -d --name aikyc-mssql \
+  -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='LocalDev123!' \
+  -p 1433:1433 -v aikyc-mssql-data:/var/opt/mssql \
+  --restart unless-stopped mcr.microsoft.com/azure-sql-edge
+```
+
+The named volume keeps `docai` across container recreates. On Apple Silicon let
+Docker Desktop handle emulation (do **not** force `--platform`, which triggers a
+fresh amd64 pull).
 
 ### 2. Create schema + seed data
 
@@ -77,6 +93,25 @@ support a `table=live|archive` selector; `/api/dashboard` also takes `granularit
 (`auto|15m|30m|1h|6h|1d`) and `start_time`/`end_time` (HH:MM, applied per day).
 `/api/range` returns the available data window and row count for a table; the UI
 uses it to snap the date picker when switching datasets.
+
+#### Credentials: DEV vs GCP Secret Manager
+
+`ENVIRONMENT=DEV` (default) uses the plain `MSSQL_USERNAME` / `MSSQL_PASSWORD`
+env values — that is the local Docker setup. Any other value (`UAT`, `PROD`)
+makes the backend fetch **username and password from GCP Secret Manager** at
+startup via the GKE metadata server (no key file):
+
+| Env var | Purpose |
+| --- | --- |
+| `ENVIRONMENT` | `DEV` = local env creds; anything else = Secret Manager |
+| `GCP_PROJECT_ID` | project holding the secrets |
+| `GCP_LOCATION` | e.g. `asia-south1` |
+| `MSSQL_USERNAME_SECRET_ID` | default `sm-aikyc-uat-db-username` |
+| `MSSQL_PASSWORD_SECRET_ID` | default `sm-aikyc-uat-db-password` |
+
+The pod's service account needs `roles/secretmanager.secretAccessor` on both
+secrets (see the Workload Identity note in `deployment.yaml`). A failed fetch
+fails the pod at startup rather than serving with stale credentials.
 
 ### 4. Frontend
 

@@ -4,24 +4,38 @@ metadata:
   name: ui-dashboard-config
   namespace: default  # TODO: set to your namespace (e.g. livephoto)
 data:
+  # Non-DEV => DB username/password are fetched from GCP Secret Manager.
+  # Set ENVIRONMENT=DEV only for a throwaway in-cluster dev deployment (then
+  # provide MSSQL_USERNAME/MSSQL_PASSWORD via a Secret instead).
+  ENVIRONMENT: "UAT"
   # Direct MSSQL connection (no uidb proxy).
-  MSSQL_SERVER: "localhost,1433"       # TODO: real SQL host:port
+  MSSQL_SERVER: "REPLACE_ME,1433"      # TODO: real SQL host:port
   MSSQL_DATABASE: "docai"              # TODO: real database
-  MSSQL_USERNAME: "sa"                 # TODO: use a scoped login
   ODBC_DRIVER: "ODBC Driver 18 for SQL Server"
   LIVE_PHOTO_TABLE: "LIVE_PHOTO_LOGS"
   LIVE_PHOTO_ARCHIVE_TABLE: "LIVE_PHOTO_LOGS_ARCHIVE"
   LIVE_WINDOW_DAYS: "7"
+  # GCP Secret Manager — same convention/secret ids as the AIKYC / livephoto
+  # services. The pod service account needs Secret Accessor on both secrets.
+  GCP_PROJECT_ID: "REPLACE_ME"
+  GCP_LOCATION: "asia-south1"
+  MSSQL_USERNAME_SECRET_ID: "sm-aikyc-uat-db-username"
+  MSSQL_PASSWORD_SECRET_ID: "sm-aikyc-uat-db-password"
 ---
-# MSSQL password is a secret, not in the ConfigMap.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ui-dashboard-secrets
-  namespace: default  # TODO: match ConfigMap namespace
-type: Opaque
-stringData:
-  MSSQL_PASSWORD: "REPLACE_ME"  # TODO: real password (or wire to an existing secret)
+# Workload Identity binding for the backend pod: the KSA (ui-dashboard) is
+# impersonated as the GSA that holds Secret Accessor. Create once, first:
+#
+#   gcloud iam service-accounts add-iam-policy-binding <GSA_EMAIL> \
+#     --role roles/iam.workloadIdentityUser \
+#     --member "serviceAccount:<PROJECT_ID>.svc.id.goog[<NAMESPACE>/ui-dashboard]"
+#
+# apiVersion: v1
+# kind: ServiceAccount
+# metadata:
+#   name: ui-dashboard
+#   namespace: default
+#   annotations:
+#     iam.gke.io/gcp-service-account: <GSA_EMAIL>
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -40,16 +54,16 @@ spec:
       labels:
         app: ui-dashboard-backend
     spec:
+      serviceAccountName: ui-dashboard  # annotate as shown above for Workload Identity
       containers:
         - name: backend
           image: <REGION>-docker.pkg.dev/<PROJECT_ID>/<REPO>/ui-dashboard-backend:0.1.0  # TODO
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
           envFrom:
             - configMapRef:
                 name: ui-dashboard-config
-            - secretRef:
-                name: ui-dashboard-secrets
           resources:
             requests:
               cpu: "100m"
