@@ -84,17 +84,17 @@ def test_dashboard_build_over_real_rows():
 
 def test_fraud_queries_execute():
     table = get_settings().table
-    summary_sql, summary_params = queries.fraud_summary_query(table, SOURCE, 3)
+    start, end = "2000-01-01", "2100-01-01"
+
+    summary_sql, summary_params = queries.fraud_summary_query(table, SOURCE, 3, start, end)
     summary = db.fetch_df(summary_sql, summary_params)
     assert not summary.empty
     assert int(summary.iloc[0]["TOTAL_USERS"]) >= 0
 
-    total_sql, total_params = queries.fraud_total_users_query(table, SOURCE)
-    total = db.fetch_df(total_sql, total_params)
-    assert int(total.iloc[0]["TOTAL_USERS"]) >= 0
-
-    burst_sql, burst_params = queries.fraud_burst_query(table, SOURCE, 5, 3)
-    db.fetch_df(burst_sql, burst_params)  # must not raise
-
-    eventual_sql, eventual_params = queries.fraud_eventual_query(table, SOURCE, 3)
+    eventual_sql, eventual_params = queries.fraud_eventual_query(table, SOURCE, 3, start, end)
     db.fetch_df(eventual_sql, eventual_params)  # must not raise
+
+    never_sql, never_params = queries.fraud_never_succeeded_query(table, SOURCE, 3, start, end)
+    never = db.fetch_df(never_sql, never_params)
+    for row in never.to_dict(orient="records"):
+        assert row["TOTAL_ATTEMPTS"] >= 3

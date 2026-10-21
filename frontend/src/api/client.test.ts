@@ -63,12 +63,14 @@ describe('api client', () => {
     expect(fetchMock.mock.calls[0][0] as string).toContain('/api/range?table=archive');
   });
 
-  it('passes the table through to fraud calls', async () => {
+  it('passes the window and table through to fraud calls', async () => {
     const fetchMock = mockFetch({ source: 'A', total_users: 0, quick_success_users: 0, quick_success_pct: 0 });
     vi.stubGlobal('fetch', fetchMock);
-    await api.getFraudSummary('A', 5, 'archive');
+    await api.getFraudSummary('A', 5, '2026-10-01', '2026-10-07', 'archive');
     const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toContain('/api/fraud/summary?');
+    expect(url).toContain('start=2026-10-01');
+    expect(url).toContain('end=2026-10-07');
     expect(url).toContain('table=archive');
   });
 

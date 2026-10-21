@@ -12,10 +12,9 @@ from .. import db, queries
 from ..config import get_settings
 from ..models import (
     DashboardResponse,
-    FraudBurstResponse,
     FraudEventualResponse,
+    FraudNeverSucceededResponse,
     FraudSummaryResponse,
-    FraudTotalUsersResponse,
     HealthResponse,
     RangeResponse,
     RawResponse,
@@ -146,10 +145,14 @@ def raw_csv(
 @router.get("/fraud/summary", response_model=FraudSummaryResponse)
 def fraud_summary(
     source: str = Query(...),
+    start: dt.date = Query(...),
+    end: dt.date = Query(...),
     threshold: int = Query(3, ge=1),
     table: str = Query("live"),
 ) -> FraudSummaryResponse:
-    sql, params = queries.fraud_summary_query(_table_name(table), source, threshold)
+    _check_range(start, end)
+    sql, params = queries.fraud_summary_query(
+        _table_name(table), source, threshold, start, end)
     df = db.fetch_df(sql, params)
     if df.empty or int(df.iloc[0]["TOTAL_USERS"] or 0) == 0:
         return FraudSummaryResponse(source=source, total_users=0, quick_success_users=0,
@@ -162,46 +165,35 @@ def fraud_summary(
     )
 
 
-@router.get("/fraud/total-users", response_model=FraudTotalUsersResponse)
-def fraud_total_users(source: str = Query(...), table: str = Query("live")) -> FraudTotalUsersResponse:
-    sql, params = queries.fraud_total_users_query(_table_name(table), source)
-    df = db.fetch_df(sql, params)
-    total = 0
-    if not df.empty and df.iloc[0]["TOTAL_USERS"] is not None:
-        total = int(df.iloc[0]["TOTAL_USERS"])
-    return FraudTotalUsersResponse(source=source, total_users=total)
-
-
 @router.get("/fraud/eventual", response_model=FraudEventualResponse)
 def fraud_eventual(
     source: str = Query(...),
-    min_failed: int = Query(3, ge=1),
+    start: dt.date = Query(...),
+    end: dt.date = Query(...),
+    min_failed: int = Query(2, ge=1),
     table: str = Query("live"),
 ) -> FraudEventualResponse:
-    sql, params = queries.fraud_eventual_query(_table_name(table), source, min_failed)
+    _check_range(start, end)
+    sql, params = queries.fraud_eventual_query(
+        _table_name(table), source, min_failed, start, end)
     df = db.fetch_df(sql, params)
     rows = [{k: metrics._clean(v) for k, v in rec.items()}
             for rec in df.to_dict(orient="records")] if not df.empty else []
     return FraudEventualResponse(source=source, rows=rows)
 
 
-@router.get("/fraud/burst", response_model=FraudBurstResponse)
-def fraud_burst(
+@router.get("/fraud/never-succeeded", response_model=FraudNeverSucceededResponse)
+def fraud_never_succeeded(
     source: str = Query(...),
-    gap_seconds: int = Query(5, ge=1),
-    min_pairs: int = Query(3, ge=1),
+    start: dt.date = Query(...),
+    end: dt.date = Query(...),
+    min_attempts: int = Query(3, ge=1),
     table: str = Query("live"),
-) -> FraudBurstResponse:
-    resolved = _table_name(table)
-    total_sql, total_params = queries.fraud_total_users_query(resolved, source)
-    total_df = db.fetch_df(total_sql, total_params)
-    total = int(total_df.iloc[0]["TOTAL_USERS"]) if not total_df.empty and total_df.iloc[0]["TOTAL_USERS"] is not None else 0
-
-    sql, params = queries.fraud_burst_query(resolved, source, gap_seconds, min_pairs)
+) -> FraudNeverSucceededResponse:
+    _check_range(start, end)
+    sql, params = queries.fraud_never_succeeded_query(
+        _table_name(table), source, min_attempts, start, end)
     df = db.fetch_df(sql, params)
     rows = [{k: metrics._clean(v) for k, v in rec.items()}
             for rec in df.to_dict(orient="records")] if not df.empty else []
-    pct = round(100 * len(rows) / total, 2) if total else 0.0
-    return FraudBurstResponse(
-        source=source, total_users=total, burst_cases=len(rows), burst_pct=pct, rows=rows,
-    )
+    return FraudNeverSucceededResponse(source=source, rows=rows)

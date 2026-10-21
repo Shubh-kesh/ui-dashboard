@@ -87,11 +87,6 @@ class FraudSummaryResponse(_Base):
     quick_success_pct: float
 
 
-class FraudTotalUsersResponse(_Base):
-    source: str
-    total_users: int
-
-
 class FraudEventualCase(_Base):
     BASE_TXN_ID: str
     TOTAL_ATTEMPTS: int
@@ -105,16 +100,11 @@ class FraudEventualResponse(_Base):
     rows: list[FraudEventualCase]
 
 
-class FraudBurstCase(_Base):
+class FraudNeverSucceededCase(_Base):
     BASE_TXN_ID: str
     TOTAL_ATTEMPTS: int
-    MIN_GAP_SECONDS: int | None = None
-    BURST_PAIRS: int
 
 
-class FraudBurstResponse(_Base):
+class FraudNeverSucceededResponse(_Base):
     source: str
-    total_users: int
-    burst_cases: int
-    burst_pct: float
-    rows: list[FraudBurstCase]
+    rows: list[FraudNeverSucceededCase]

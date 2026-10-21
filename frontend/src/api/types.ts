@@ -68,19 +68,16 @@ export interface FraudSummaryResponse {
   quick_success_pct: number;
 }
 
-export type FraudBurstRow = Record<string, string | number | null>;
-export interface FraudBurstResponse {
-  source: string;
-  total_users: number;
-  burst_cases: number;
-  burst_pct: number;
-  rows: FraudBurstRow[];
-}
-
 export type FraudEventualRow = Record<string, string | number | null>;
 export interface FraudEventualResponse {
   source: string;
   rows: FraudEventualRow[];
+}
+
+export type FraudNeverSucceededRow = Record<string, string | number | null>;
+export interface FraudNeverSucceededResponse {
+  source: string;
+  rows: FraudNeverSucceededRow[];
 }
 
 export interface DashboardQuery {

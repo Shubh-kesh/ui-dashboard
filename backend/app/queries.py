@@ -82,8 +82,10 @@ WITH parsed AS (
         AUTHENTICITY_STATUS,
         CALLBACK_STATUS,
         SOURCE
-    FROM {table}
+    FROM {table} WITH (NOLOCK)
     WHERE SOURCE = ?
+      AND {event_time} >= ?
+      AND {event_time} < DATEADD(day, 1, ?)
       AND CHARINDEX('_', TXN_ID) > 0
       AND CHARINDEX('~', TXN_ID) > 0
 ),
@@ -98,62 +100,30 @@ per_user AS (
 )
 """
 
-_PARSED_TIME_CTE = """
-WITH parsed AS (
-    SELECT
-        TXN_ID,
-        LEFT(TXN_ID, CHARINDEX('_', TXN_ID) - 1) AS BASE_TXN_ID,
-        CAST(SUBSTRING(TXN_ID, CHARINDEX('~', TXN_ID) + 1, LEN(TXN_ID)) AS INT) AS ATTEMPT_NO,
-        COALESCE(REQUEST_HIT_DATETIME, HEAD_NOD_REQUEST_HIT_DATETIME) AS ATTEMPT_TIME,
-        SOURCE
-    FROM {table}
-    WHERE SOURCE = ?
-      AND CHARINDEX('_', TXN_ID) > 0
-      AND CHARINDEX('~', TXN_ID) > 0
-),
-gaps AS (
-    SELECT
-        BASE_TXN_ID,
-        ATTEMPT_NO,
-        DATEDIFF(SECOND,
-                 LAG(ATTEMPT_TIME) OVER (PARTITION BY BASE_TXN_ID ORDER BY ATTEMPT_NO),
-                 ATTEMPT_TIME) AS GAP_SECONDS
-    FROM parsed
-),
-per_user_velocity AS (
-    SELECT
-        BASE_TXN_ID,
-        COUNT(*) AS TOTAL_ATTEMPTS,
-        MIN(GAP_SECONDS) AS MIN_GAP_SECONDS,
-        SUM(CASE WHEN GAP_SECONDS IS NOT NULL AND GAP_SECONDS <= {gap} THEN 1 ELSE 0 END) AS BURST_PAIRS
-    FROM gaps
-    GROUP BY BASE_TXN_ID
-)
-"""
+
+def _parsed_cte(table: str) -> str:
+    return _PARSED_CTE.format(table=table, event_time=_EVENT_TIME)
 
 
-def fraud_summary_query(table: str, source: str, quick_success_threshold: int) -> tuple[str, list]:
-    sql = _PARSED_CTE.format(table=table) + f"""
+def fraud_summary_query(
+    table: str, source: str, quick_success_threshold: int,
+    start: str, end: str,
+) -> tuple[str, list]:
+    sql = _parsed_cte(table) + f"""
 SELECT
     COUNT(*) AS TOTAL_USERS,
     SUM(CASE WHEN SUCCESS_ATTEMPT_NO IS NOT NULL AND SUCCESS_ATTEMPT_NO < {int(quick_success_threshold)}
              THEN 1 ELSE 0 END) AS QUICK_SUCCESS_USERS
 FROM per_user
 """
-    return sql, [source]
+    return sql, [source, start, end]
 
 
-def fraud_total_users_query(table: str, source: str) -> tuple[str, list]:
-    sql = (
-        "SELECT COUNT(DISTINCT LEFT(TXN_ID, CHARINDEX('_', TXN_ID) - 1)) AS TOTAL_USERS "
-        f"FROM {table} WITH (NOLOCK) "
-        "WHERE SOURCE = ? AND CHARINDEX('_', TXN_ID) > 0 AND CHARINDEX('~', TXN_ID) > 0"
-    )
-    return sql, [source]
-
-
-def fraud_eventual_query(table: str, source: str, min_failed_attempts: int) -> tuple[str, list]:
-    sql = _PARSED_CTE.format(table=table) + f"""
+def fraud_eventual_query(
+    table: str, source: str, min_failed_attempts: int,
+    start: str, end: str,
+) -> tuple[str, list]:
+    sql = _parsed_cte(table) + f"""
 SELECT
     pu.BASE_TXN_ID,
     pu.TOTAL_ATTEMPTS,
@@ -167,14 +137,23 @@ WHERE pu.SUCCESS_ATTEMPT_NO IS NOT NULL
   AND (pu.SUCCESS_ATTEMPT_NO - 1) >= {int(min_failed_attempts)}
 ORDER BY FAILED_ATTEMPTS_BEFORE_SUCCESS DESC
 """
-    return sql, [source]
+    return sql, [source, start, end]
 
 
-def fraud_burst_query(table: str, source: str, gap_seconds: int, min_pairs: int) -> tuple[str, list]:
-    sql = _PARSED_TIME_CTE.format(table=table, gap=int(gap_seconds)) + f"""
-SELECT BASE_TXN_ID, TOTAL_ATTEMPTS, MIN_GAP_SECONDS, BURST_PAIRS
-FROM per_user_velocity
-WHERE BURST_PAIRS >= {int(min_pairs)}
-ORDER BY BURST_PAIRS DESC, MIN_GAP_SECONDS ASC
+def fraud_never_succeeded_query(
+    table: str, source: str, min_attempts: int,
+    start: str, end: str,
+) -> tuple[str, list]:
+    """Users who made >= min_attempts attempts in the window and never passed
+    both authenticity and callback on any attempt."""
+    sql = _parsed_cte(table) + f"""
+SELECT
+    pu.BASE_TXN_ID,
+    pu.TOTAL_ATTEMPTS
+FROM per_user pu
+WHERE pu.SUCCESS_ATTEMPT_NO IS NULL
+  AND pu.TOTAL_ATTEMPTS >= {int(min_attempts)}
+ORDER BY pu.TOTAL_ATTEMPTS DESC
 """
-    return sql, [source]
+    return sql, [source, start, end]
+

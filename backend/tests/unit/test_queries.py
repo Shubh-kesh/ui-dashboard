@@ -43,24 +43,34 @@ def test_sources_query_shape():
 
 
 def test_fraud_summary_query_parameterized_source_and_threshold():
-    sql, params = queries.fraud_summary_query(LIVE, "NETBANKING", 4)
+    sql, params = queries.fraud_summary_query(LIVE, "NETBANKING", 4, "2026-10-01", "2026-10-07")
     assert "SOURCE = ?" in sql
-    assert params == ["NETBANKING"]
+    assert params == ["NETBANKING", "2026-10-01", "2026-10-07"]
     assert "SUCCESS_ATTEMPT_NO < 4" in sql
 
 
-def test_fraud_burst_query_embeds_gap_and_params_source():
-    sql, params = queries.fraud_burst_query(LIVE, "BRANCH_TAB", 7, 2)
-    assert "GAP_SECONDS <= 7" in sql
-    assert "BURST_PAIRS >= 2" in sql
-    assert params == ["BRANCH_TAB"]
+def test_fraud_queries_apply_the_date_window():
+    _, params = queries.fraud_eventual_query(
+        ARCHIVE, "MOBILE_APP", 5, "2026-09-01", "2026-09-30")
+    assert params == ["MOBILE_APP", "2026-09-01", "2026-09-30"]
+    sql, _ = queries.fraud_summary_query(LIVE, "NETBANKING", 4, "2026-10-01", "2026-10-07")
+    assert "DATEADD(day, 1, ?)" in sql
+
+
+def test_fraud_never_succeeded_query_min_attempts_and_archive_target():
+    sql, params = queries.fraud_never_succeeded_query(
+        ARCHIVE, "MOBILE_APP", 5, "2026-09-01", "2026-09-30")
+    assert ARCHIVE in sql
+    assert "SUCCESS_ATTEMPT_NO IS NULL" in sql
+    assert "TOTAL_ATTEMPTS >= 5" in sql
+    assert params == ["MOBILE_APP", "2026-09-01", "2026-09-30"]
 
 
 def test_fraud_eventual_query_min_failed_and_archive_target():
-    sql, params = queries.fraud_eventual_query(ARCHIVE, "MOBILE_APP", 5)
+    sql, params = queries.fraud_eventual_query(ARCHIVE, "MOBILE_APP", 5, "2026-09-01", "2026-09-30")
     assert ARCHIVE in sql
     assert ">= 5" in sql
-    assert params == ["MOBILE_APP"]
+    assert params == ["MOBILE_APP", "2026-09-01", "2026-09-30"]
 
 
 def test_table_identifier_validation_rejects_injection():

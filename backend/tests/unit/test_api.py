@@ -15,11 +15,8 @@ def fake_db(monkeypatch, catalog_df):
             return pd.DataFrame({"SOURCE": ["MOBILE_APP", "NETBANKING", "MOBILE_APP"]})
         if "QUICK_SUCCESS_USERS" in sql:
             return pd.DataFrame([{"TOTAL_USERS": 10, "QUICK_SUCCESS_USERS": 6}])
-        if "COUNT(DISTINCT" in sql:
-            return pd.DataFrame([{"TOTAL_USERS": 10}])
-        if "per_user_velocity" in sql:
-            return pd.DataFrame([{"BASE_TXN_ID": "b1", "TOTAL_ATTEMPTS": 4,
-                                  "MIN_GAP_SECONDS": 2, "BURST_PAIRS": 3}])
+        if "SUCCESS_ATTEMPT_NO IS NULL" in sql:
+            return pd.DataFrame([{"BASE_TXN_ID": "n1", "TOTAL_ATTEMPTS": 4}])
         if "FAILED_ATTEMPTS_BEFORE_SUCCESS" in sql:
             return pd.DataFrame([{"BASE_TXN_ID": "b2", "TOTAL_ATTEMPTS": 5,
                                   "SUCCESS_ATTEMPT_NO": 5,
@@ -116,20 +113,25 @@ def test_raw_and_raw_csv(client, fake_db):
 
 
 def test_fraud_endpoints(client, fake_db):
-    summary = client.get("/api/fraud/summary", params={"source": "MOBILE_APP", "threshold": 4}).json()
+    summary = client.get(
+        "/api/fraud/summary",
+        params={"source": "MOBILE_APP", "threshold": 4, **DATE},
+    ).json()
     assert summary == {"source": "MOBILE_APP", "total_users": 10,
                        "quick_success_users": 6, "quick_success_pct": 60.0}
 
-    total = client.get("/api/fraud/total-users", params={"source": "MOBILE_APP"}).json()
-    assert total["total_users"] == 10
-
-    eventual = client.get("/api/fraud/eventual", params={"source": "MOBILE_APP", "min_failed": 3}).json()
+    eventual = client.get(
+        "/api/fraud/eventual",
+        params={"source": "MOBILE_APP", "min_failed": 3, **DATE},
+    ).json()
     assert len(eventual["rows"]) == 1 and eventual["rows"][0]["SUCCESS_TXN_ID"] == "b2~5"
 
-    burst = client.get("/api/fraud/burst",
-                       params={"source": "MOBILE_APP", "gap_seconds": 5, "min_pairs": 3,
-                               "table": "archive"}).json()
-    assert burst["total_users"] == 10 and burst["burst_cases"] == 1 and burst["burst_pct"] == 10.0
+    never = client.get(
+        "/api/fraud/never-succeeded",
+        params={"source": "MOBILE_APP", "min_attempts": 3, **DATE, "table": "archive"},
+    ).json()
+    assert never["source"] == "MOBILE_APP"
+    assert never["rows"] == [{"BASE_TXN_ID": "n1", "TOTAL_ATTEMPTS": 4}]
 
 
 def test_database_error_maps_to_502(client, monkeypatch):

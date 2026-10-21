@@ -88,11 +88,14 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 Serves `GET /api/health`, `/api/sources`, `/api/range`, `/api/dashboard`,
-`/api/raw`, `/api/raw.csv`, `/api/fraud/{summary,total-users,eventual,burst}`. All
-support a `table=live|archive` selector; `/api/dashboard` also takes `granularity`
+`/api/raw`, `/api/raw.csv`,
+`/api/fraud/{summary,eventual,never-succeeded}`. All support a
+`table=live|archive` selector; `/api/dashboard` also takes `granularity`
 (`auto|15m|30m|1h|6h|1d`) and `start_time`/`end_time` (HH:MM, applied per day).
-`/api/range` returns the available data window and row count for a table; the UI
-uses it to snap the date picker when switching datasets.
+The fraud endpoints take `source`, `start` and `end` so the analysis is scoped
+to the dashboard's selected window. `/api/range` returns the available data
+window and row count for a table; the UI uses it to snap the date picker when
+switching datasets.
 
 #### Credentials: DEV vs GCP Secret Manager
 

@@ -1,8 +1,8 @@
 import type {
   DashboardQuery,
   DashboardResponse,
-  FraudBurstResponse,
   FraudEventualResponse,
+  FraudNeverSucceededResponse,
   FraudSummaryResponse,
   RangeResponse,
   RawResponse,
@@ -69,16 +69,30 @@ export const api = {
 
   rawCsvUrl: (q: DashboardQuery) => `${API_BASE}/api/raw.csv${qs(windowParams(q))}`,
 
-  getFraudSummary: (source: string, threshold: number, table: TableKey) =>
-    getJson<FraudSummaryResponse>(`/api/fraud/summary${qs({ source, threshold, table })}`),
-
-  getFraudEventual: (source: string, minFailed: number, table: TableKey) =>
-    getJson<FraudEventualResponse>(
-      `/api/fraud/eventual${qs({ source, min_failed: minFailed, table })}`,
+  getFraudSummary: (source: string, threshold: number, start: string, end: string, table: TableKey) =>
+    getJson<FraudSummaryResponse>(
+      `/api/fraud/summary${qs({ source, threshold, start, end, table })}`,
     ),
 
-  getFraudBurst: (source: string, gapSeconds: number, minPairs: number, table: TableKey) =>
-    getJson<FraudBurstResponse>(
-      `/api/fraud/burst${qs({ source, gap_seconds: gapSeconds, min_pairs: minPairs, table })}`,
+  getFraudEventual: (
+    source: string,
+    minFailed: number,
+    start: string,
+    end: string,
+    table: TableKey,
+  ) =>
+    getJson<FraudEventualResponse>(
+      `/api/fraud/eventual${qs({ source, min_failed: minFailed, start, end, table })}`,
+    ),
+
+  getFraudNeverSucceeded: (
+    source: string,
+    minAttempts: number,
+    start: string,
+    end: string,
+    table: TableKey,
+  ) =>
+    getJson<FraudNeverSucceededResponse>(
+      `/api/fraud/never-succeeded${qs({ source, min_attempts: minAttempts, start, end, table })}`,
     ),
 };

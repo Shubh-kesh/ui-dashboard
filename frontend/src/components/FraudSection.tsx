@@ -2,90 +2,87 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type {
-  FraudBurstResponse,
   FraudEventualResponse,
+  FraudNeverSucceededResponse,
   FraudSummaryResponse,
   TableKey,
 } from '../api/types';
 import { fmtNumber, fmtPct } from '../lib/format';
 
 interface Props {
-  sources: string[];
+  source: string;
+  start: string;
+  end: string;
   table: TableKey;
 }
 
-export default function FraudSection({ sources, table }: Props) {
-  const [source, setSource] = useState('');
-  const [threshold, setThreshold] = useState(10);
-  const [gapSeconds, setGapSeconds] = useState(2);
-  const [minPairs, setMinPairs] = useState(3);
+export default function FraudSection({ source, start, end, table }: Props) {
+  const [quick, setQuick] = useState(3);
+  const [minPriorFailed, setMinPriorFailed] = useState(2);
+  const [minAttempts, setMinAttempts] = useState(3);
+  const [ranKey, setRanKey] = useState<string | null>(null);
 
   const summary = useMutation<FraudSummaryResponse>({
-    mutationFn: () => api.getFraudSummary(source, threshold, table),
+    mutationFn: () => api.getFraudSummary(source, quick, start, end, table),
   });
   const eventual = useMutation<FraudEventualResponse>({
-    mutationFn: () => api.getFraudEventual(source, threshold, table),
+    mutationFn: () => api.getFraudEventual(source, minPriorFailed, start, end, table),
   });
-  const burst = useMutation<FraudBurstResponse>({
-    mutationFn: () => api.getFraudBurst(source, gapSeconds, minPairs, table),
+  const never = useMutation<FraudNeverSucceededResponse>({
+    mutationFn: () => api.getFraudNeverSucceeded(source, minAttempts, start, end, table),
   });
 
-  const disabled = !source || summary.isPending || eventual.isPending || burst.isPending;
+  const running = summary.isPending || eventual.isPending || never.isPending;
+  const currentKey = `${source}|${start}|${end}|${table}|${quick}|${minPriorFailed}|${minAttempts}`;
+  const showResults = ranKey === currentKey;
+  const disabled = !source || running;
+
   const run = () => {
     if (!source) return;
+    setRanKey(currentKey);
     summary.mutate();
     eventual.mutate();
-    burst.mutate();
+    never.mutate();
   };
+
+  const totalUsers = summary.data?.total_users ?? 0;
+  const eventualPct = totalUsers > 0 ? (100 * (eventual.data?.rows.length ?? 0)) / totalUsers : 0;
+  const neverPct = totalUsers > 0 ? (100 * (never.data?.rows.length ?? 0)) / totalUsers : 0;
 
   return (
     <section className="space-y-4">
       <h2 className="text-lg font-semibold text-slate-800">Fraud analysis</h2>
       <div className="flex flex-wrap items-end gap-4 rounded-xl border border-slate-200 bg-white p-4">
         <label className="flex flex-col text-sm font-medium text-slate-600">
-          Source
-          <select
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
-            data-testid="fraud-source"
-            className="mt-1 rounded-md border border-slate-300 px-3 py-1.5"
-          >
-            <option value="">Select source…</option>
-            {sources.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col text-sm font-medium text-slate-600">
-          Threshold (attempts)
+          Quick success: fewer than N attempts
           <input
             type="number"
             min={1}
-            value={threshold}
-            onChange={(e) => setThreshold(Number(e.target.value))}
-            data-testid="fraud-threshold"
-            className="mt-1 w-28 rounded-md border border-slate-300 px-3 py-1.5"
-          />
-        </label>
-        <label className="flex flex-col text-sm font-medium text-slate-600">
-          Burst gap (s)
-          <input
-            type="number"
-            min={1}
-            value={gapSeconds}
-            onChange={(e) => setGapSeconds(Number(e.target.value))}
+            value={quick}
+            onChange={(e) => setQuick(Number(e.target.value))}
+            data-testid="fraud-quick"
             className="mt-1 w-24 rounded-md border border-slate-300 px-3 py-1.5"
           />
         </label>
         <label className="flex flex-col text-sm font-medium text-slate-600">
-          Min pairs
+          Suspected fraud (succeeded): min prior failed attempts
           <input
             type="number"
             min={1}
-            value={minPairs}
-            onChange={(e) => setMinPairs(Number(e.target.value))}
+            value={minPriorFailed}
+            onChange={(e) => setMinPriorFailed(Number(e.target.value))}
+            data-testid="fraud-min-failed"
+            className="mt-1 w-24 rounded-md border border-slate-300 px-3 py-1.5"
+          />
+        </label>
+        <label className="flex flex-col text-sm font-medium text-slate-600">
+          Suspected fraud (never succeeded): min attempts
+          <input
+            type="number"
+            min={1}
+            value={minAttempts}
+            onChange={(e) => setMinAttempts(Number(e.target.value))}
+            data-testid="fraud-min-attempts"
             className="mt-1 w-24 rounded-md border border-slate-300 px-3 py-1.5"
           />
         </label>
@@ -94,39 +91,65 @@ export default function FraudSection({ sources, table }: Props) {
           disabled={disabled}
           className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark disabled:opacity-50"
         >
-          {summary.isPending || eventual.isPending || burst.isPending ? 'Running…' : 'Run analysis'}
+          {running ? 'Running…' : 'Run Attempt Analysis'}
         </button>
       </div>
 
-      {(summary.error || eventual.error || burst.error) && (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {(summary.error as Error)?.message ??
-            (eventual.error as Error)?.message ??
-            (burst.error as Error)?.message}
+      {!source && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Select a source in the filters above to run fraud analysis.
         </p>
       )}
 
-      {summary.data && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Stat label="Total users" value={fmtNumber(summary.data.total_users)} />
-          <Stat label={`Users with ≤ ${threshold} attempts`} value={fmtNumber(summary.data.quick_success_users)} />
-          <Stat label="Quick-success rate" value={fmtPct(summary.data.quick_success_pct)} />
-        </div>
+      {showResults && (summary.error || eventual.error || never.error) && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {(summary.error as Error)?.message ??
+            (eventual.error as Error)?.message ??
+            (never.error as Error)?.message}
+        </p>
       )}
 
-      {eventual.data && (
+      {showResults && summary.data && (
+        <>
+          <p className="text-sm text-slate-600">
+            {fmtNumber(totalUsers)} unique users (BASE_TXN_ID) found for {source}
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Stat
+              label={`Succeeded in < ${quick} attempts`}
+              value={fmtPct(summary.data.quick_success_pct)}
+            />
+            <Stat
+              label={`Suspected fraud, succeeded (≥ ${minPriorFailed} prior fails)`}
+              value={fmtPct(eventualPct)}
+            />
+            <Stat
+              label={`Suspected fraud, never succeeded (≥ ${minAttempts} attempts)`}
+              value={fmtPct(neverPct)}
+            />
+          </div>
+        </>
+      )}
+
+      {showResults && eventual.data && (
         <TableCard
-          title={`Eventual successes (≥ ${threshold} failed attempts)`}
-          columns={['BASE_TXN_ID', 'TOTAL_ATTEMPTS', 'SUCCESS_ATTEMPT_NO', 'FAILED_ATTEMPTS_BEFORE_SUCCESS', 'SUCCESS_TXN_ID']}
+          title="Suspected fraud — eventually succeeded"
+          columns={[
+            'BASE_TXN_ID',
+            'TOTAL_ATTEMPTS',
+            'SUCCESS_ATTEMPT_NO',
+            'FAILED_ATTEMPTS_BEFORE_SUCCESS',
+            'SUCCESS_TXN_ID',
+          ]}
           rows={eventual.data.rows as Record<string, unknown>[]}
         />
       )}
 
-      {burst.data && (
+      {showResults && never.data && (
         <TableCard
-          title={`Burst cases (gap ≤ ${gapSeconds}s, ≥ ${minPairs} pairs)`}
-          columns={['BASE_TXN_ID', 'TOTAL_ATTEMPTS', 'MIN_GAP_SECONDS', 'BURST_PAIRS']}
-          rows={burst.data.rows as Record<string, unknown>[]}
+          title="Suspected fraud — never succeeded"
+          columns={['BASE_TXN_ID', 'TOTAL_ATTEMPTS']}
+          rows={never.data.rows as Record<string, unknown>[]}
         />
       )}
     </section>

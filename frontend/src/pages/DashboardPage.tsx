@@ -163,7 +163,7 @@ export default function DashboardPage() {
         query={rawQuery}
       />
 
-      <FraudSection sources={sources.data ?? []} table={table} />
+      <FraudSection source={source} start={start} end={end} table={table} />
     </div>
   );
 }
