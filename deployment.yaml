@@ -21,6 +21,16 @@ data:
   GCP_LOCATION: "asia-south1"
   MSSQL_USERNAME_SECRET_ID: "sm-aikyc-uat-db-username"
   MSSQL_PASSWORD_SECRET_ID: "sm-aikyc-uat-db-password"
+  # Load alerts (alert worker). SMTP contract matches the standalone AIKYC app.
+  SMTP_SERVER: "REPLACE_ME"
+  SMTP_PORT: "25"
+  EMAIL_SENDER: "REPLACE_ME"
+  EMAIL_RECIVER: "REPLACE_ME"
+  ALERT_CONFIG: "alerts.yaml"
+  ALERT_TIMEZONE: "Asia/Kolkata"
+  ALERT_STATE_FILE: "/tmp/ui-dashboard-alerts-state.json"
+  ALERT_HEARTBEAT_FILE: "/tmp/ui-dashboard-alerts-heartbeat"
+  DASHBOARD_URL: "REPLACE_ME"
 ---
 # Workload Identity binding for the backend pod: the KSA (ui-dashboard) is
 # impersonated as the GSA that holds Secret Accessor. Create once, first:
@@ -96,6 +106,96 @@ spec:
     - port: 8000
       targetPort: 8000
   type: ClusterIP
+---
+# Alert rules (mounted at /app/alerts.yaml in the alert worker). Tune the
+# thresholds to your infra capacity; the values below are placeholders.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ui-dashboard-alerts-rules
+  namespace: default
+data:
+  alerts.yaml: |
+    evaluation_interval_seconds: 60
+    timezone: Asia/Kolkata
+    dashboard_url: "REPLACE_ME"
+    rules:
+      - id: blink-load-5m
+        metric: blink_requests
+        source: "*"
+        window_minutes: 5
+        threshold: 1000
+        breaches_required: 2
+        cooldown_minutes: 15
+        enabled: true
+      - id: authenticity-load-5m
+        metric: authenticity_requests
+        source: "*"
+        window_minutes: 5
+        threshold: 500
+        breaches_required: 2
+        cooldown_minutes: 15
+        enabled: true
+---
+# Single-replica alert worker: separate from the API so emails fire even when
+# nobody has the dashboard open, and so API replicas cannot send duplicates.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui-dashboard-alerts
+  namespace: default
+  labels:
+    app: ui-dashboard-alerts
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ui-dashboard-alerts
+  template:
+    metadata:
+      labels:
+        app: ui-dashboard-alerts
+    spec:
+      serviceAccountName: ui-dashboard  # same Workload Identity as the API
+      containers:
+        - name: alerts
+          image: <REGION>-docker.pkg.dev/<PROJECT_ID>/<REPO>/ui-dashboard-backend:0.1.0  # TODO
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.alerts.worker"]
+          envFrom:
+            - configMapRef:
+                name: ui-dashboard-config
+          volumeMounts:
+            - name: alert-rules
+              mountPath: /app/alerts.yaml
+              subPath: alerts.yaml
+              readOnly: true
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - |
+                  import os, time
+                  path = os.environ.get("ALERT_HEARTBEAT_FILE", "/tmp/ui-dashboard-alerts-heartbeat")
+                  raise SystemExit(0 if os.path.exists(path) and time.time() - os.path.getmtime(path) < 300 else 1)
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 3
+      volumes:
+        - name: alert-rules
+          configMap:
+            name: ui-dashboard-alerts-rules
+            items:
+              - key: alerts.yaml
+                path: alerts.yaml
 ---
 apiVersion: apps/v1
 kind: Deployment

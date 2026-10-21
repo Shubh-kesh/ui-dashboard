@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -98,3 +99,13 @@ def test_fraud_queries_execute():
     never = db.fetch_df(never_sql, never_params)
     for row in never.to_dict(orient="records"):
         assert row["TOTAL_ATTEMPTS"] >= 3
+
+
+def test_alert_counts_query_executes():
+    now = dt.datetime.now(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
+    sql, params = queries.alert_counts_query(
+        get_settings().table, now - dt.timedelta(hours=2), now)
+    df = db.fetch_df(sql, params)
+    for column in ("SOURCE", "TOTAL", "BLINK", "HEAD_NOD", "AUTH",
+                   "IMAGE_SEG", "VERIFYTOKEN", "CALLBACK"):
+        assert column in df.columns

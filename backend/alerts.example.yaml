@@ -1,0 +1,50 @@
+# Load-alert rules for the ui-dashboard alert worker.
+#
+# The worker re-reads this file every cycle. Metrics are request counts from
+# LIVE_PHOTO_LOGS over a sliding window (event time = COALESCE of the blink /
+# head-nod request timestamps, treated as IST).
+#
+# source:
+#   "LIVEPHOTO_UCJv5" -> that source only
+#   "*"               -> all sources combined
+#   omitted           -> one evaluation per source (alert names the source)
+#
+# metrics: total | blink_requests | head_nod_requests | authenticity_requests
+#          | image_seg_requests | verify_token_requests | callback_requests
+#
+# A breach must persist for `breaches_required` consecutive cycles, then repeats
+# are suppressed for `cooldown_minutes`. Adjust thresholds to your infra
+# capacity before enabling in UAT/prod.
+
+evaluation_interval_seconds: 60
+timezone: Asia/Kolkata
+dashboard_url: http://localhost:8090
+
+rules:
+  - id: blink-load-5m
+    metric: blink_requests
+    source: "*"
+    window_minutes: 5
+    threshold: 1000
+    breaches_required: 2
+    cooldown_minutes: 15
+    enabled: true
+
+  - id: authenticity-load-5m
+    metric: authenticity_requests
+    source: "*"
+    window_minutes: 5
+    threshold: 500
+    breaches_required: 2
+    cooldown_minutes: 15
+    enabled: true
+
+  # Per-source example (omit `source`): alerts individually for each source.
+  # - id: head-nod-load-5m
+  #   metric: head_nod_requests
+  #   window_minutes: 5
+  #   threshold: 250
+  #   enabled: false
+  #
+  # Optional per-rule recipients override the global EMAIL_RECIVER list.
+  #   recipients: [oncall@example.com, ops@example.com]

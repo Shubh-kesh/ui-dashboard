@@ -138,6 +138,52 @@ npm run dev        # http://localhost:5173, proxies /api -> :8000
 - **Exceptions** (collapsible), **Raw data** (collapsible, + CSV download) and
   **Fraud analysis**.
 
+## Load alerts (SMTP)
+
+A standalone worker evaluates per-stage request counts over a sliding window and
+emails when a rule is breached. It runs independently of the API/UI (so alerts
+fire even when nobody is watching) and is deployed as a single replica.
+
+Rules live in `backend/alerts.example.yaml` (mounted at `/app/alerts.yaml` in
+k8s). The file is re-read every cycle; a malformed reload keeps the last good
+config. Metrics: `total`, `blink_requests`, `head_nod_requests`,
+`authenticity_requests`, `image_seg_requests`, `verify_token_requests`,
+`callback_requests`. `source: "*"` aggregates all sources; omit it to evaluate
+each source separately. A breach must persist for `breaches_required` cycles,
+repeats are suppressed for `cooldown_minutes`, and a recovery email is sent when
+the value drops back.
+
+SMTP uses the same environment contract as the standalone AIKYC app:
+
+| Env var | Purpose |
+| --- | --- |
+| `SMTP_SERVER` / `SMTP_PORT` | relay (UAT: `25`; local Mailpit: `1025`) |
+| `EMAIL_SENDER` | From address |
+| `EMAIL_RECIVER` | recipients, comma/semicolon separated (`EMAIL_RECEIVER` also accepted) |
+| `SMTP_STARTTLS` / `SMTP_SSL` | optional; default off (AIKYC uses plain SMTP) |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | optional auth |
+
+Worker knobs: `ALERT_CONFIG`, `ALERT_TIMEZONE` (default `Asia/Kolkata`, matching
+the catalog timestamps), `ALERT_STATE_FILE`, `ALERT_HEARTBEAT_FILE`,
+`DASHBOARD_URL`.
+
+Local check with Mailpit:
+
+```bash
+docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
+cd backend
+ALERT_CONFIG=alerts.example.yaml SMTP_SERVER=localhost SMTP_PORT=1025 \
+  EMAIL_SENDER=noreply@localhost EMAIL_RECIVER=noreply@localhost \
+  python -m app.alerts.worker --test-email
+python -m app.alerts.worker --once --dry-run   # evaluate + log, no mail
+open http://localhost:8025
+```
+
+Long-running worker: `python -m app.alerts.worker`. In k8s it is the
+`ui-dashboard-alerts` Deployment (1 replica); the heartbeat file drives its
+liveness probe. The local seed has ~1 event per 5 minutes, so use `threshold: 0`
+or a longer window when testing locally.
+
 ## Tests
 
 ```bash
@@ -161,3 +207,7 @@ docker build -t ui-dashboard-frontend:dev frontend/
 The frontend image serves the build with nginx and proxies `/api/` to the
 `ui-dashboard-backend` Service. Deploy with `kubectl apply -f deployment.yaml`
 (fill in the image references, namespace and the `MSSQL_PASSWORD` secret first).
+
+The backend image also runs the alert worker (`command:
+["python", "-m", "app.alerts.worker"]`); `alerts.yaml` is copied into the image
+as a fallback and overridden by the `ui-dashboard-alerts-rules` ConfigMap mount.

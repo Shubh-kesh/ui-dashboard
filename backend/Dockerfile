@@ -19,9 +19,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --default-timeout=120 -r requirements.txt
 
 COPY app ./app
+COPY alerts.example.yaml ./alerts.yaml
 COPY pytest.ini ./
 
 # Non-root runtime user (matches typical runAsUser/runAsGroup: 1000).

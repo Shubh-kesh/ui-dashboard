@@ -13,6 +13,8 @@ No ``TOP``/``LIMIT`` is applied: every builder returns the full window.
 """
 from __future__ import annotations
 
+import datetime as dt
+
 # Authoritative catalog column set (kept identical to the historical
 # Streamlit uidb_client.CATALOG_COLUMNS, plus the review columns).
 CATALOG_COLUMNS = [
@@ -156,4 +158,32 @@ WHERE pu.SUCCESS_ATTEMPT_NO IS NULL
 ORDER BY pu.TOTAL_ATTEMPTS DESC
 """
     return sql, [source, start, end]
+
+
+def alert_counts_query(
+    table: str, start: dt.datetime, end: dt.datetime,
+) -> tuple[str, list]:
+    """Per-source request counts for the load-alert worker.
+
+    ``*_REQUEST`` columns are BIT: 1 = requested, NULL = skipped. ``SUM`` is
+    used instead of ``COUNT`` so an explicit 0 would not be counted either.
+    Timestamps are naive IST, matching the values stored in the catalog.
+    """
+    sql = f"""
+SELECT
+    SOURCE,
+    COUNT(*) AS TOTAL,
+    SUM(CASE WHEN BLINK_REQUEST = 1 THEN 1 ELSE 0 END) AS BLINK,
+    SUM(CASE WHEN HEAD_NOD_REQUEST = 1 THEN 1 ELSE 0 END) AS HEAD_NOD,
+    SUM(CASE WHEN AUTHENTICITY_REQUEST = 1 THEN 1 ELSE 0 END) AS AUTH,
+    SUM(CASE WHEN IMAGE_SEG_REQUEST = 1 THEN 1 ELSE 0 END) AS IMAGE_SEG,
+    SUM(CASE WHEN VERIFYTOKEN_REQ = 1 THEN 1 ELSE 0 END) AS VERIFYTOKEN,
+    SUM(CASE WHEN CALLBACK_REQ = 1 THEN 1 ELSE 0 END) AS CALLBACK
+FROM {table} WITH (NOLOCK)
+WHERE COALESCE(REQUEST_HIT_DATETIME, HEAD_NOD_REQUEST_HIT_DATETIME) >= ?
+  AND COALESCE(REQUEST_HIT_DATETIME, HEAD_NOD_REQUEST_HIT_DATETIME) < ?
+GROUP BY SOURCE
+ORDER BY SOURCE
+"""
+    return sql, [start, end]
 
